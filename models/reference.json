@@ -1,0 +1,30 @@
+{
+  "district_codes": {
+    "10": "LUSAKA",
+    "11": "CHONGWE",
+    "12": "KAFUE",
+    "13": "KABWE",
+    "14": "KAPIRI",
+    "15": "MUMBWA",
+    "20": "NDOLA",
+    "21": "KITWE",
+    "22": "MUFULIRA",
+    "23": "CHINGOLA",
+    "30": "KASAMA",
+    "31": "MBALA",
+    "32": "MPIKA",
+    "40": "CHIPATA",
+    "41": "PETAUKE",
+    "42": "LUNDAZI",
+    "50": "CHOMA",
+    "51": "MAZABUKA",
+    "52": "MONZE",
+    "53": "LIVINGSTONE",
+    "60": "MONGU",
+    "61": "SENANGA",
+    "70": "SOLWEZI",
+    "71": "MWINILUNGA",
+    "80": "MANSA"
+  },
+  "source": "learned from genuine synthetic specimens; replace with official NRB district code table"
+}

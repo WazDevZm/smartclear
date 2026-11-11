@@ -2,13 +2,14 @@
 
 Pipeline:
   1. RapidOCR (PP-OCR detection + recognition on ONNX Runtime) reads every text line.
-  2. The page is deskewed using the median angle of the detected text boxes.
-  3. A card-relative coordinate frame is anchored on the printed title
+  2. The page side is identified from its registration-card title or NRC number.
+  3. Front-side pages are deskewed using the median angle of detected text boxes.
+  4. A card-relative coordinate frame is anchored on the printed title
      ("REGISTRATION CARD") and the card number line, so the layout survives shifts,
      small rotations and different scan offsets.
-  4. Printed form labels are discarded by glyph height (data is typed larger), and the
+  5. Printed form labels are discarded by glyph height (data is typed larger), and the
      remaining data tokens are assigned to fields by zone.
-  5. Values are normalised with field-specific character repair (O->0 in numbers etc.).
+  6. Values are normalised with field-specific character repair (O->0 in numbers etc.).
 """
 from __future__ import annotations
 
@@ -42,6 +43,8 @@ COL_DIVIDER = 198   # dx separating the left (personal) and right (district/date
 DOB_MAX_DX = 72     # DOB sits at the far left of its row
 SEX_MIN_DX = 240
 
+# Median "REGISTRATION CARD" title width across the synthetic training scans.
+REFERENCE_TITLE_WIDTH = 195.1
 
 # Field boxes in the card-relative frame: (dx0, dx1, dy0, dy1)
 FIELD_BOXES = {
@@ -138,6 +141,20 @@ def _deskew(image: np.ndarray, theta: float):
     return out, M
 
 
+def ocr_view(image: np.ndarray) -> np.ndarray:
+    """Normalize color and contrast for OCR without changing source pixels."""
+    import cv2
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
+    enhanced = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
+    return cv2.cvtColor(enhanced, cv2.COLOR_GRAY2BGR)
+
+
+def _layout_scale(title: Token) -> float:
+    # Slightly expand zones to absorb under-read title bounds on camera scans.
+    return float(np.clip(title.w / REFERENCE_TITLE_WIDTH * 1.02, 0.65, 2.5))
+
+
 def _read_zone(img: np.ndarray, M: np.ndarray, x0, y0, x1, y1, scale: float = 2.0) -> list[Token]:
     """Crop a zone from the deskewed image, OCR it at 2x, drop printed labels,
     and return tokens in ORIGINAL image coordinates."""
@@ -148,7 +165,8 @@ def _read_zone(img: np.ndarray, M: np.ndarray, x0, y0, x1, y1, scale: float = 2.
     x1, y1 = min(W, int(x1)), min(H, int(y1))
     if x1 - x0 < 8 or y1 - y0 < 8:
         return []
-    crop = cv2.resize(img[y0:y1, x0:x1], None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    crop = ocr_view(img[y0:y1, x0:x1])
+    crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     crop = cv2.copyMakeBorder(crop, 12, 12, 12, 12, cv2.BORDER_REPLICATE)
     result, _ = get_engine()(crop, use_cls=False)
     Minv = cv2.invertAffineTransform(M)
@@ -213,6 +231,8 @@ class Extraction:
     fields: dict[str, Field] = field(default_factory=dict)
     tokens: list[Token] = field(default_factory=list)
     skew_deg: float = 0.0
+    layout_scale: float = 1.0
+    side: str = "unknown"
     anchored: bool = True
     deskew_matrix: object = None
     deskewed: object = None                 # deskewed BGR image (not serialised)
@@ -227,6 +247,8 @@ class Extraction:
         return {
             "fields": {k: v.to_dict() for k, v in self.fields.items()},
             "skew_deg": round(self.skew_deg, 2),
+            "layout_scale": round(self.layout_scale, 3),
+            "side": self.side,
             "anchored": self.anchored,
             "warnings": self.warnings,
         }
@@ -265,7 +287,7 @@ def _parse_date(s: str) -> str | None:
 
 
 def run_ocr(image: np.ndarray) -> list[Token]:
-    result, _ = get_engine()(image, use_cls=False)
+    result, _ = get_engine()(ocr_view(image), use_cls=False)
     toks = []
     for quad, text, conf in result or []:
         toks.append(Token(text=str(text).strip(), conf=float(conf), quad=np.array(quad, dtype=float)))
@@ -309,21 +331,38 @@ def extract(image: np.ndarray, tokens: list[Token] | None = None) -> Extraction:
     ex.fields["nrc_number"] = _mk([reg_tok], reg_val) if reg_tok else Field(None, 0.0)
 
     # --- 3. Anchors on the data side
-    title = next((t for t in toks if "REGIST" in t.text.upper().replace(" ", "") and t.w > 120), None)
+    title = next((t for t in toks
+                  if "REGIST" in t.text.upper().replace(" ", "")
+                  and "CARD" in t.text.upper().replace(" ", "") and t.w > 120), None)
     card_tok, card_val = None, None
-    for t in toks:
-        if reg_tok is not None and t is reg_tok:
-            continue
-        body = re.sub(r"^\s*[Z2]\s+|^\s*Z", "", t.text.strip().upper())
-        m = CARD_RE.search(body.translate(DIGIT_FIX).replace(" ", ""))
-        if m and t.h >= 12 and (title is None or t.ry < title.ry + 15):
-            card_tok, card_val = t, "Z" + m.group(1)
-            break
+    if title is not None:
+        for t in toks:
+            if reg_tok is not None and t is reg_tok:
+                continue
+            body = re.sub(r"^\s*[Z2]\s+|^\s*Z", "", t.text.strip().upper())
+            m = CARD_RE.search(body.translate(DIGIT_FIX).replace(" ", ""))
+            if m and t.h >= 12 and t.ry < title.ry + 15:
+                card_tok, card_val = t, "Z" + m.group(1)
+                break
     ex.fields["card_number"] = _mk([card_tok], card_val) if card_tok else Field(None, 0.0)
 
-    if title is None or card_tok is None:
+    if title is None:
+        ex.side = "back" if reg_tok is not None and reg_tok.cy < image.shape[0] * 0.55 else "unknown"
         ex.anchored = False
-        ex.warnings.append("Could not locate the data-side anchors (title / card number); layout fields not extracted.")
+        if ex.side == "unknown":
+            ex.warnings.append("Could not identify this page as the NRC front or back.")
+        for k in ("card_number", "full_name", "date_of_birth", "sex", "place_of_birth_village",
+                  "place_of_birth_district", "parent_place_of_birth", "village", "district", "chief",
+                  "registration_date", "special_marks"):
+            ex.fields[k] = Field(None, 0.0)
+        if ex.side == "unknown":
+            ex.fields["nrc_number"] = Field(None, 0.0)
+        return ex
+
+    ex.side = "front"
+    if card_tok is None:
+        ex.anchored = False
+        ex.warnings.append("Could not locate the card number beside the registration-card title.")
         for k in ("full_name", "date_of_birth", "sex", "place_of_birth_village", "place_of_birth_district",
                   "parent_place_of_birth", "village", "district", "chief", "registration_date", "special_marks"):
             ex.fields[k] = Field(None, 0.0)
@@ -331,6 +370,7 @@ def extract(image: np.ndarray, tokens: list[Token] | None = None) -> Extraction:
 
     x_left = title.rx - title.w / 2
     y0 = card_tok.ry
+    ex.layout_scale = _layout_scale(title)
     deskewed, M = _deskew(image, theta)
     ex.deskew_matrix = M
     ex.deskewed = deskewed
@@ -344,10 +384,15 @@ def extract(image: np.ndarray, tokens: list[Token] | None = None) -> Extraction:
         rcx, rcy = M @ [reg_tok.cx, reg_tok.cy, 1.0]
         rw, rh = max(reg_tok.w, 140), max(reg_tok.h, 22)
     else:
-        rcx, rcy, rw, rh = x_left + REG_OFFSET[0], y0 + REG_OFFSET[1], 152, 22
+        rcx, rcy, rw, rh = x_left + REG_OFFSET[0] * ex.layout_scale, \
+            y0 + REG_OFFSET[1] * ex.layout_scale, 152 * ex.layout_scale, 22 * ex.layout_scale
     ex.forensic_boxes["nrc_number"] = _clip([rcx - rw / 2 - 6, rcy - rh / 2 - 4, rcx + rw / 2 + 6, rcy + rh / 2 + 4])
     reads = {}
-    for name, (x0, x1, y_lo, y_hi) in FIELD_BOXES.items():
+    scaled_boxes = {
+        name: tuple(value * ex.layout_scale for value in box)
+        for name, box in FIELD_BOXES.items()
+    }
+    for name, (x0, x1, y_lo, y_hi) in scaled_boxes.items():
         full = []
         for t in toks:
             if t is title or t is card_tok or t is reg_tok or t.h < 11.5 or t.conf < 0.5:
@@ -367,7 +412,7 @@ def extract(image: np.ndarray, tokens: list[Token] | None = None) -> Extraction:
         return _mk(toks, value)
 
     def _tight(toks_, zone_name, pad=4):
-        zx0, zx1, zy0, zy1 = FIELD_BOXES[zone_name]
+        zx0, zx1, zy0, zy1 = scaled_boxes[zone_name]
         if toks_:
             xs0 = [t.rx - t.w / 2 for t in toks_]
             xs1 = [t.rx + t.w / 2 for t in toks_]

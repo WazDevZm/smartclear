@@ -50,8 +50,12 @@ Full report: `models/evaluation.json` and the **Model performance** page in the 
 
 ### 1. Extraction: `backend/smartclear/extraction.py`
 * **RapidOCR** (PaddleOCR PP-OCR detection and recognition models on ONNX Runtime) runs fully on-premise.
-* Pass 1: full-page OCR finds anchors (the "REGISTRATION CARD" title, the card number and the registration number) and estimates skew from the text-box angles.
-* The page is deskewed and a card-relative coordinate frame is built, so the layout survives shifts and rotation.
+* Every PDF page is cropped and OCR'd independently. Pages are classified as card front or back; front-side fields and the back-side NRC number are then merged with their page coordinates preserved. Unknown pages are not used to fill fields.
+* A clearly dominant quadrilateral card is cropped and perspective-corrected; if boundaries are ambiguous, the page is kept intact and the case warns officers to review nearby stamps or handwriting.
+* Pages without a readable horizontal card anchor are checked at quarter-turn rotations. Unknown layouts are still not mapped to new field positions automatically.
+* OCR uses a grayscale, contrast-normalized view. The uploaded original and its color pixels remain unchanged for storage and forensic analysis.
+* Pass 1: OCR finds anchors (the "REGISTRATION CARD" title, the card number and the registration number) and estimates skew from the text-box angles.
+* The page is deskewed and a card-relative coordinate frame is scaled from the printed title, so field zones adapt to different scan sizes.
 * Pass 2: each field zone is cropped and re-read at 2×. The two passes are **fused** by keeping the most confident read for each position, which recovers words the full-page detector clips at printed lines.
 * Printed form labels are removed by glyph height plus fuzzy matching, weighted by OCR confidence.
 * District fields are snapped to a gazetteer of Zambia's 116 districts (`gazetteer.py`). Personal names are never auto-corrected.
@@ -134,4 +138,5 @@ Interactive docs: http://localhost:8000/docs
 
 ## Data handling
 * All development used **synthetic** NRCs only. Nothing leaves the machine, and no cloud OCR or LLM is called.
+* The uploaded source file is stored unchanged; preprocessing crops clear card regions, reads every PDF page, and creates a grayscale evidence preview.
 * Real ZRA documents should be processed only inside ZRA's controlled sandbox. See NEXT_STEPS.md.

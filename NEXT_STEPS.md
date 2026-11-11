@@ -16,7 +16,9 @@ The prototype runs end to end on the synthetic set. This file covers three thing
 - [x] Trained field-level tamper model, plus the synthetic forgery generator used to train it
 - [x] Evaluation harness for the brief's three success measures, plus a robustness test (`scripts/evaluate.py`)
 - [x] Officer web app: queue, case review with evidence, decisions, audit trail, metrics page, landing page
-- [x] Unit and end-to-end tests (`pytest`, 12 passing)
+- [x] Performance: multi-card pages processed in parallel + batched zone OCR + content-hash cache (~0.3s re-verify)
+- [x] Batch verification page, paginated lists (queue / records / audit) with rows-per-page selector, audit CSV export, dashboard charts, keyboard decision shortcuts
+- [x] Unit and end-to-end tests (`pytest`, 18 passing)
 
 ## Honest caveats
 Please read these before presenting results:
@@ -32,6 +34,8 @@ Please read these before presenting results:
 5. **The district-code table was learned from 26 codes seen in genuine cards.** It must be replaced with the official NRB code table.
 6. **Pilot-grade auth.** Demo accounts are hard-coded in `api.py`, and tokens are HMAC-signed bearer tokens.
 
+10. **One real scan has been run through the pipeline.** The numbers in README are from that single legacy-issue scan: bold print reads exactly (card no., registration date), faint dotted print reads approximately with low confidence (name, village, districts), and the dot-perforated registration number is unreadable by RapidOCR — reported as unreadable, not guessed. The legacy template zones (`FIELD_BOXES_LEGACY`) and the layout-stretch detection are calibrated on this one card. Do not quote a real-world accuracy from it; label a representative sample and report per-field accuracy with confidence intervals.
+
 ## Remaining work by role
 
 ### Data Science Lead
@@ -42,8 +46,8 @@ Please read these before presenting results:
 - [ ] Check the name matcher on real Zambian name variants: clan names, hyphenation, transliteration and initials.
 
 ### AI Lead
-- [ ] **Generalise extraction beyond the synthetic template.** Add a card detector or perspective correction for phone photos, plus a fallback for when the anchors are not found (currently `anchored=False` and the layout fields are empty). Test on real scan quality.
-- [ ] Re-calibrate `FIELD_BOXES` and `REG_OFFSET` in `extraction.py` on real cards, or learn them, e.g. with a small key-value layout model.
+- [x] **Generalise extraction beyond the synthetic template (first pass, one real scan).** Pages are normalised so detected cards sit at the calibrated width, multi-card pages no longer break the anchors, and the taller "legacy green" layout is auto-detected and calibrated (`cards.py`, `FIELD_BOXES_LEGACY`). Contrast-enhanced re-read of the name field; deterministic label-phrase stripping; dates with 4-digit years. Test on a wider set of real scans — especially phone photos (glare, perspective), which this does not yet handle.
+- [ ] Re-calibrate the legacy zones on more real cards and learn them (e.g. a key-value layout model) instead of hand-tuning; the current legacy calibration is one card wide.
 - [ ] Retrain the tamper model on ZRA's **labelled fake-NRC set**. Keep the document-grouped CV in `train_tamper.py`, and add new forgery techniques to `synth.py` as they are discovered.
 - [ ] Add a **photo and portrait check**: replaced photo, face-region tamper, and an optional face match against a captured selfie.
 - [ ] Add document-level forensics: JPEG ghost / error-level analysis, copy-move detection, and checks on security features such as the coat-of-arms region and thumbprint area.
@@ -58,7 +62,8 @@ Please read these before presenting results:
 
 ### Front End & UI/UX
 - [ ] Run usability sessions with TSE and Domestic Taxes officers, then iterate on the case view: wording of flags, layout at the counter, and keyboard shortcuts for approve and reject.
-- [ ] Add batch upload, a supervisor queue for escalations, and a timing view comparing manual and SmartClear handling.
+- [x] Batch upload: `/api/batches` + batch verification page (up to 50 scans per submission; one case each, risk-ordered into the queue).
+- [ ] A supervisor queue for escalations, and a timing view comparing manual and SmartClear handling.
 - [ ] Accessibility pass (contrast, focus states, screen reader labels) and a light theme for bright offices.
 - [ ] Keep the "flags support judgement" message visible in every view, as a governance requirement.
 

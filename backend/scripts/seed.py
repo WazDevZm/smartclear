@@ -161,6 +161,12 @@ def main():
         print(f"[{i:3d}/{len(pdfs)}] {p.name}: {row['risk_band']:6s} verification={row['verification']:8s} "
               f"flags={row['n_flags']}", flush=True)
 
+    # Spread the seeded cases across the last 14 days + mark a subset decided,
+    # so the dashboard's volume/decision panels carry real numbers.
+    from seed_timeline import spread_timeline  # type: ignore
+    with db.conn() as c:
+        spread_timeline(c)
+
 
 if __name__ == "__main__":
     main()

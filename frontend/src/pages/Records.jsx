@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Search } from 'lucide-react'
 import { api } from '../api'
-import { PageHeader, Spinner } from '../components/ui'
+import { PageHeader, Pagination, Spinner, usePagination } from '../components/ui'
 
 export default function Records() {
   const [q, setQ] = useState('')
@@ -10,6 +10,7 @@ export default function Records() {
     const t = setTimeout(() => api(`/taxpayers${q ? `?q=${encodeURIComponent(q)}` : ''}`).then(setRows), 200)
     return () => clearTimeout(t)
   }, [q])
+  const pg = usePagination(rows)
   return (
     <div>
       <PageHeader title="Captured taxpayer records" subtitle="Synthetic stand-in for ZRA’s registration records (the real source is still being identified)" />
@@ -24,7 +25,7 @@ export default function Records() {
               {['TPIN', 'Full name', 'NRC number', 'Date of birth', 'Sex', 'District', 'Test scenario'].map((h) => <th key={h} className="label px-5 py-3.5">{h}</th>)}
             </tr></thead>
             <tbody className="divide-y divide-white/[0.05]">
-              {rows.map((r) => (
+              {pg.slice.map((r) => (
                 <tr key={r.tpin} className="hover:bg-white/[0.02]">
                   <td className="px-5 py-3 font-mono text-xs text-slate-400">{r.tpin}</td>
                   <td className="px-5 py-3 text-white">{r.full_name}</td>
@@ -37,6 +38,8 @@ export default function Records() {
               ))}
             </tbody>
           </table>
+          {!rows.length && <div className="p-10 text-center text-sm text-slate-500">No records match “{q}”.</div>}
+          <Pagination {...pg} />
         </div>
       )}
     </div>

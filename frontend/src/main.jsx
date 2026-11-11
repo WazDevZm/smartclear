@@ -10,6 +10,7 @@ import Dashboard from './pages/Dashboard'
 import Queue from './pages/Queue'
 import CaseDetail from './pages/CaseDetail'
 import Upload from './pages/Upload'
+import Batch from './pages/Batch'
 import Records from './pages/Records'
 import Performance from './pages/Performance'
 import Audit from './pages/Audit'
@@ -29,6 +30,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <Route path="queue" element={<Queue />} />
           <Route path="cases/:id" element={<CaseDetail />} />
           <Route path="verify" element={<Upload />} />
+          <Route path="batch" element={<Batch />} />
           <Route path="records" element={<Records />} />
           <Route path="performance" element={<Performance />} />
           <Route path="audit" element={<Audit />} />

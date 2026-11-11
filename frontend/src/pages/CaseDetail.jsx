@@ -64,14 +64,26 @@ function Decision({ c, onDone }) {
   const [note, setNote] = useState(c.decision_note || '')
   const [busy, setBusy] = useState('')
   const [err, setErr] = useState('')
+
   async function act(action) {
     setBusy(action); setErr('')
     try { onDone(await api(`/cases/${c.id}/review`, { method: 'POST', json: { action, note } })) }
     catch (e) { setErr(e.message) } finally { setBusy('') }
   }
-  const B = ({ a, cls, Icon, children }) => (
-    <button onClick={() => act(a)} disabled={!!busy} className={`btn ${cls}`}>{busy === a ? <Spinner className="h-4 w-4" /> : <Icon size={15} />}{children}</button>
-  )
+
+  // Counter-officer keyboard shortcuts: 1 approve · 2 reject · 3 escalate · 4 request info.
+  // Ignored while typing in a field; reject/escalate still demand a note.
+  useEffect(() => {
+    const onKey = (e) => {
+      const t = e.target
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return
+      const map = { 1: 'approve', 2: 'reject', 3: 'escalate', 4: 'request_info' }
+      if (map[e.key]) { e.preventDefault(); act(map[e.key]) }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [c.id, note])
   return (
     <div className="card p-5">
       <div className="flex items-center justify-between">
@@ -82,12 +94,12 @@ function Decision({ c, onDone }) {
       <textarea className="input mt-4 h-20 resize-none" placeholder="Notes (required to reject or escalate)…" value={note} onChange={(e) => setNote(e.target.value)} />
       {err && <div className="mt-2 text-xs text-rose-300">{err}</div>}
       <div className="mt-3 grid grid-cols-2 gap-2">
-        <B a="approve" cls="bg-emerald-500/90 text-ink-950 hover:bg-emerald-400" Icon={Check}>Approve</B>
-        <B a="reject" cls="bg-rose-500/90 text-white hover:bg-rose-500" Icon={X}>Reject</B>
-        <B a="escalate" cls="border border-violet-400/30 bg-violet-400/10 text-violet-200 hover:bg-violet-400/20" Icon={Send}>Escalate</B>
-        <B a="request_info" cls="border border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]" Icon={MessageSquare}>Request info</B>
+        <button onClick={() => act('approve')} disabled={!!busy} title="Approve (key 1)" className="btn bg-emerald-500/90 text-ink-950 hover:bg-emerald-400">{busy === 'approve' ? <Spinner className="h-4 w-4" /> : <Check size={15} />}Approve <kbd className="ml-1 rounded bg-black/20 px-1.5 py-0.5 font-mono text-[10px]">1</kbd></button>
+        <button onClick={() => act('reject')} disabled={!!busy} title="Reject (key 2)" className="btn bg-rose-500/90 text-white hover:bg-rose-500">{busy === 'reject' ? <Spinner className="h-4 w-4" /> : <X size={15} />}Reject <kbd className="ml-1 rounded bg-black/20 px-1.5 py-0.5 font-mono text-[10px]">2</kbd></button>
+        <button onClick={() => act('escalate')} disabled={!!busy} title="Escalate (key 3)" className="btn border border-violet-400/30 bg-violet-400/10 text-violet-200 hover:bg-violet-400/20">{busy === 'escalate' ? <Spinner className="h-4 w-4" /> : <Send size={15} />}Escalate <kbd className="ml-1 rounded bg-black/20 px-1.5 py-0.5 font-mono text-[10px]">3</kbd></button>
+        <button onClick={() => act('request_info')} disabled={!!busy} title="Request info (key 4)" className="btn border border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]">{busy === 'request_info' ? <Spinner className="h-4 w-4" /> : <MessageSquare size={15} />}Request info <kbd className="ml-1 rounded bg-black/20 px-1.5 py-0.5 font-mono text-[10px]">4</kbd></button>
       </div>
-      <p className="mt-3 text-[11px] leading-relaxed text-slate-500">SmartClear recommends, the officer decides. Records are never changed automatically.</p>
+      <p className="mt-3 text-[11px] leading-relaxed text-slate-500">Keyboard: <span className="font-mono text-slate-400">1</span> approve · <span className="font-mono text-slate-400">2</span> reject · <span className="font-mono text-slate-400">3</span> escalate · <span className="font-mono text-slate-400">4</span> request info. Rejecting or escalating still requires a note. SmartClear recommends, the officer decides.</p>
     </div>
   )
 }

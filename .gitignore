@@ -8,3 +8,5 @@ frontend/dist/
 storage/
 *.log
 .env
+data/real/
+

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Search } from 'lucide-react'
 import { api } from '../api'
-import { BandBadge, OutcomeIcon, PageHeader, Spinner, StatusBadge, outcomeText } from '../components/ui'
+import { BandBadge, OutcomeIcon, PageHeader, Pagination, Spinner, StatusBadge, outcomeText, usePagination } from '../components/ui'
 
 const Pill = ({ active, onClick, children }) => (
   <button onClick={onClick} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${active ? 'bg-white text-ink-950' : 'bg-white/[0.04] text-slate-400 hover:text-white'}`}>{children}</button>
@@ -23,6 +23,7 @@ export default function Queue() {
     return () => clearTimeout(t)
   }, [band, status, q])
   const set = (k, v) => { const n = new URLSearchParams(params); v ? n.set(k, v) : n.set(k, ''); setParams(n) }
+  const pg = usePagination(rows)
   return (
     <div>
       <PageHeader title="Review queue" subtitle="Every submitted NRC, ordered so the riskiest cases come first" />
@@ -48,7 +49,7 @@ export default function Queue() {
                 <th key={h} className="label px-5 py-3.5 font-semibold">{h}</th>)}
             </tr></thead>
             <tbody className="divide-y divide-white/[0.05]">
-              {rows.map((c) => (
+              {pg.slice.map((c) => (
                 <tr key={c.id} className="group cursor-pointer transition hover:bg-white/[0.03]" onClick={() => (window.location.href = `/app/cases/${c.id}`)}>
                   <td className="px-5 py-3.5"><Link to={`/app/cases/${c.id}`} className="font-mono text-xs text-clear-300">{c.ref}</Link></td>
                   <td className="px-5 py-3.5 font-medium text-white">{c.full_name || <span className="italic text-slate-500">unreadable</span>}</td>
@@ -63,6 +64,7 @@ export default function Queue() {
             </tbody>
           </table>
           {!rows.length && <div className="p-10 text-center text-sm text-slate-500">No cases match these filters.</div>}
+          <Pagination {...pg} />
         </div>
       )}
     </div>

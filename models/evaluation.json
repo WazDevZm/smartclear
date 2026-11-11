@@ -158,8 +158,8 @@
       },
       "genuine": {
         "high": 12,
-        "clear": 54,
-        "review": 1
+        "clear": 53,
+        "review": 2
       }
     },
     "note": "Tamper-model contribution uses 5-fold out-of-fold scores (document-grouped)."
@@ -171,8 +171,8 @@
     "errors": []
   },
   "processing_time_ms": {
-    "median": 846.5,
-    "p90": 1085.4
+    "median": 7497.0,
+    "p90": 11738.500000000002
   },
   "tamper_model_cv": {
     "cv_synthetic_plus_real": {

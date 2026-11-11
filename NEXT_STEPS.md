@@ -51,14 +51,7 @@ Please read these before presenting results:
 
 - [ ] **Generalise extraction beyond the synthetic template.** Add version detection and validated field maps, plus a fallback for when anchors are not found (currently `anchored=False` and the layout fields are empty). Test on real scan quality.
 - [ ] Re-calibrate `FIELD_BOXES` and `REG_OFFSET` in `extraction.py` per identified card version, or learn them, e.g. with a small key-value layout model.
-- [ ] **Benchmark OCR failure cases before changing the extractor.** Keep a held-out, manually labelled set and report results per field (names, dates, NRC numbers, and other fields), not just aggregate accuracy. Compare:
-  - Current behavior against a conservative unreadable-field policy on blacked-out, blurred, and partially erased text. Measure correct unreadable decisions, hallucination rate (a value returned for an unreadable field), and false unreadable decisions on legible fields.
-  - Current OCR against field-specific format checks and validation. Measure exact field accuracy, character error rate, invalid-value rate, and plausible-but-wrong values to quantify random-letter/digit errors.
-  - Current image preprocessing against no enhancement, adaptive thresholding, and contrast/sharpening variants. Measure accuracy and hallucination rate by field and image condition.
-  - Current field crops against tighter/expanded crops and representative card layouts/scales. Measure wrong-field assignment and per-field accuracy, including label or neighboring-text contamination.
-  - Current OCR engine against another suitable OCR engine on identical images and field rules. Compare per-field accuracy, character error rate, unreadable behavior, and processing time.
-  - Clean scans against representative phone photos and controlled blur, glare/shadow, rotation, low-resolution, compression, stamp, and handwriting conditions. Report accuracy and human-review rate for each condition.
-- [ ] Start with unreadable-field handling and random-character errors. Treat a correct unreadable result as distinct from a correct transcription; do not reward a system for blanking every field. Keep tuning examples separate from the held-out test set.
+- [ ] **Benchmark OCR on held-out, labelled cards.** Compare current vs. alternative preprocessing, field crops/layouts, and OCR engines across damaged text and real scan conditions (phone photos, blur, glare, rotation, low resolution, compression, stamps, and handwriting). Report per-field accuracy, character errors, wrong-field assignments, unreadable-field hallucinations/false blanks, review rate, and processing time; keep tuning data separate.
 - [ ] Retrain the tamper model on ZRA's **labelled fake-NRC set**. Keep the document-grouped CV in `train_tamper.py`, and add new forgery techniques to `synth.py` as they are discovered.
 - [ ] Add a **photo and portrait check**: replaced photo, face-region tamper, and an optional face match against a captured selfie.
 - [ ] Add document-level forensics: JPEG ghost / error-level analysis, copy-move detection, and checks on security features such as the coat-of-arms region and thumbprint area.
@@ -74,32 +67,11 @@ Please read these before presenting results:
 
 ### Front End & UI/UX
 
-- [ ] Run usability sessions with TSE and Domestic Taxes officers, then iterate on the case view: wording of flags, layout at the counter, and keyboard shortcuts for approve and reject.
 - [ ] Add batch upload, a supervisor queue for escalations, and a timing view comparing manual and SmartClear handling.
 - [ ] Accessibility pass (contrast, focus states, screen reader labels) and a light theme for bright offices.
 - [ ] Keep the "flags support judgement" message visible in every view, as a governance requirement.
 
-### Business & Research Lead
-
-- [ ] Map the current manual workflow and confirm where SmartClear sits (at the counter vs back office).
-- [ ] Finalise data-handling requirements with ZRA: DPIA, access controls, sandbox rules, and who may see real NRC images.
-- [ ] Define the **decision-gate criteria** for continue, redesign or stop (relevance, usability, data quality), as in the brief.
-- [ ] Write up the limitations (above) and the replication path: passports, customs.
-- [ ] Prepare the showcase demo script using the seeded cases:
-  - SC-0101 (district swap)
-  - SC-0105 (patched NRC digit)
-  - SC-0152 (substituted surname)
-  - SC-0139 (registered at age 9)
-  - SC-0177 (erased NRC number)
-
-## Suggested timeline (remaining pilot)
-
-| Weeks | Focus                                                                                                   |
-| ----- | ------------------------------------------------------------------------------------------------------- |
-| 1–2   | Sandbox deployment (Docker), real-records connection, baseline protocol agreed, real sample labelled    |
-| 3–5   | Extraction generalisation on real scans; tamper model retrained on ZRA's fake-NRC set; threshold tuning |
-| 6–8   | Officer usability testing and UI iteration; SSO and audit hardening                                     |
-| 9–10  | Final evaluation against manual baseline, limitations write-up, showcase                                |
+                               |
 
 ## Useful commands
 

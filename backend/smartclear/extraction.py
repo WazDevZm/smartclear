@@ -600,7 +600,13 @@ def extract(image: np.ndarray, tokens: list[Token] | None = None,
 
     # Pick the field-zone template: the legacy (taller-printed) card is detected
     # from where its printed labels sit, not from a fixed size threshold.
+    # _layout_stretch measures label positions in raw pixels, which is only meaningful once
+    # the page has been normalised so the card is 924 px wide (page_cards = detected cards).
+    # Without that, a sharp high-resolution scan of a standard card looks "2x taller" and was
+    # misread as the legacy layout; so there, measure relative to the printed title instead.
     y_stretch = _layout_stretch(toks, y0)
+    if not page_cards:
+        y_stretch = _layout_stretch(toks, y0) / ex.layout_scale
     legacy = y_stretch > 1.5
     min_h = 11.5 * y_stretch if legacy else 11.5
     read_scale = 2.8 if legacy else 2.0

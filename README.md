@@ -71,6 +71,7 @@ So: on real scans, expect exact reads on the bold printed fields (card no., regi
 
 ### 1. Extraction: `backend/smartclear/extraction.py`, `backend/smartclear/cards.py`
 * Real scans are normalised first: card regions are detected on the page (`cards.detect_cards`) and the page is scaled so the card matches the calibrated 924 px card width. Tighter-cropped or single-card scans pass through unchanged.
+* When no card is detected on the page, the page is resized so the printed "REGISTRATION CARD" title has its calibrated width (high-resolution scans are shrunk; low-resolution scans get a 2× retry when the title cannot be read at all).
 * The printed-layout variant is detected from where its labels sit. The taller "legacy green" issue gets its own zone calibration (`FIELD_BOXES_LEGACY`) and an honesty warning on every case.
 * **RapidOCR** (PaddleOCR PP-OCR detection and recognition models on ONNX Runtime) runs fully on-premise.
 * Every PDF page is cropped and OCR'd independently. Pages are classified as card front or back; front-side fields and the back-side NRC number are then merged with their page coordinates preserved. Unknown pages are not used to fill fields.

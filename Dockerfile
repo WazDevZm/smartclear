@@ -41,4 +41,5 @@ RUN python backend/scripts/seed.py && python backend/scripts/seed_timeline.py
 EXPOSE 7860
 
 # FastAPI serves both the built SPA and /api on one port
-CMD ["python", "-m", "uvicorn", "smartclear.api:app", "--app-dir", "backend", "--host", "0.0.0.0", "--port", "7860"]
+# Render serves on $PORT (typically 10000); Spaces serves on 7860. Default to 7860.
+CMD ["sh", "-c", "python -m uvicorn smartclear.api:app --app-dir backend --host 0.0.0.0 --port ${PORT:-7860}"]

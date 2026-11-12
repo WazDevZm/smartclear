@@ -33,7 +33,7 @@ COPY --from=frontend /app/frontend/dist ./frontend/dist
 # HF Spaces runs the container as an unprivileged user; keep storage writable
 RUN useradd -m -u 1000 user \
     && mkdir -p /app/storage/images /app/storage/uploads /app/storage/cache/docs \
-    && chown -R user:user /app/storage
+    && chown -R user:user /app/storage /app/models
 USER user
 
 # Bake the seeded demo database into the image — first request is instant

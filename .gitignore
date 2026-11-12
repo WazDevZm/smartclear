@@ -6,5 +6,7 @@ __pycache__/
 node_modules/
 frontend/dist/
 storage/
+# real NRC scans and their labels are personal data: never commit them
+data/real_nrc/
 *.log
 .env

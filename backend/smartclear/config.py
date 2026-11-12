@@ -11,6 +11,12 @@ FRONTEND_DIST = ROOT / "frontend" / "dist"
 # Source synthetic dataset supplied with the challenge (sibling folder of the project)
 SYNTHETIC_PDF_DIR = DATA_DIR / "synthetic_nrc"
 
+DISTRICTS_CSV = DATA_DIR / "zambia_districts.csv"   # verified district list (DISTRICT, PROVINCE, DIST_CODE)
+
+# District post-correction: fuzzy similarity (0-100) between OCR text and a known district
+DISTRICT_AUTO_CORRECT = 85     # at or above: replace with the canonical district (raw OCR kept)
+DISTRICT_SUGGEST = 70          # at or above (but below auto): keep OCR value, offer the district to the officer
+
 TAMPER_MODEL_PATH = MODELS_DIR / "tamper_model.joblib"
 REFERENCE_PATH = MODELS_DIR / "reference.json"   # district-code table learned from genuine specimens
 

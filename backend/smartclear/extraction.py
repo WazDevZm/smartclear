@@ -20,7 +20,7 @@ from functools import lru_cache
 
 import numpy as np
 
-DATE_RE = re.compile(r"(\d{2})[.,:\s]?(\d{2})[.,:\s]?(\d{2})$")
+DATE_RE = re.compile(r"(\d{1,2})[.,:\s]?(\d{2})[.,:\s]?(\d{2})$")   # real cards may print 8.12.23
 REG_RE = re.compile(r"(\d{6})\s*/\s*(\d{2})\s*/\s*(\d)")
 CARD_RE = re.compile(r"(\d{8})")
 
@@ -59,6 +59,20 @@ FIELD_BOXES = {
     "registration_date": (200, 345, 128, 156),
     "special": (50, 200, 152, 176),
 }
+
+# Printed labels used as vertical landmarks: median dy (card-relative, same frame as FIELD_BOXES)
+# measured on the synthetic scans. Real cards print the same form with taller rows, so the ratio
+# observed/expected for these labels gives a per-card vertical stretch for the field boxes.
+LANDMARK_LABELS = {
+    "DATEOFBIRTH": 55.3, "PLACEOFBIRTH": 56.5, "VILLAGE": 103.8, "DISTRICT": 103.9,
+    "SPECIALMARKS": 152.8, "DATEOFRENUNCIATION": 155.5, "ORPOLICESTATION": 189.3,
+}
+# Labels that are recognised (so their text is not mistaken for a landmark) but not used to measure:
+# their position varies too much, or their text resembles typed names.
+OTHER_LABELS = ["FULLNAME", "FATHERSMOTHERSPLACEOFBIRTH", "CHIEF", "REGISTRATIONDATE", "SEX",
+                "IFTHISCARDISFOUNDPLEASERETURNTONEARESTREGISTRATIONOFFICE"]
+STRETCH_LIMITS = (0.85, 1.30)   # plausible vertical stretch relative to the synthetic layout
+STRETCH_DEADBAND = 0.03         # ignore stretch estimates this close to 1 (measurement noise)
 
 LONG_LABELS = ["DATEOFBIRTH", "PLACEOFBIRTH", "FATHERSMOTHERSPLACEOFBIRTH", "SPECIALMARKS", "REGISTRATIONDATE",
                "DATEOFRENUNCIATION", "FULLNAME", "VILLAGE", "DISTRICT", "REGISTRATIONNUMBER"]
@@ -155,6 +169,46 @@ def _layout_scale(title: Token) -> float:
     return float(np.clip(title.w / REFERENCE_TITLE_WIDTH * 1.02, 0.65, 2.5))
 
 
+def _landmark(text: str) -> str | None:
+    """Which printed label (if any) is this OCR token? Requires a clear winner over other labels."""
+    from rapidfuzz import fuzz
+
+    w = re.sub(r"[^A-Z]", "", text.upper())
+    if len(w) < 5:
+        return None
+    labels = list(LANDMARK_LABELS) + OTHER_LABELS
+    scored = sorted(((fuzz.partial_ratio(w, l) if len(w) <= len(l) else fuzz.partial_ratio(l, w), l)
+                     for l in labels), reverse=True)
+    (s1, best), (s2, _) = scored[0], scored[1]
+    if s1 < 72 or s1 - s2 < 8 or best not in LANDMARK_LABELS:
+        return None
+    return best
+
+
+def _vertical_stretch(toks: list[Token], x_left: float, y0: float, scale: float,
+                      skip: tuple) -> tuple[float, list[str]]:
+    """Estimate how much taller this card's rows are than the calibrated layout, from the
+    positions of printed labels relative to the card-number baseline (dy = 0)."""
+    ratios, used = [], []
+    for t in toks:
+        if any(t is s for s in skip):
+            continue
+        dx, dy = (t.rx - x_left) / scale, (t.ry - y0) / scale
+        if not (-30 <= dx <= 380 and 30 <= dy <= 260):
+            continue
+        label = _landmark(t.text)
+        if label is None:
+            continue
+        r = dy / LANDMARK_LABELS[label]
+        if STRETCH_LIMITS[0] <= r <= STRETCH_LIMITS[1]:
+            ratios.append(r)
+            used.append(label)
+    if not ratios:
+        return 1.0, []
+    stretch = float(np.median(ratios))
+    return (1.0 if abs(stretch - 1.0) < STRETCH_DEADBAND else stretch), used
+
+
 def _read_zone(img: np.ndarray, M: np.ndarray, x0, y0, x1, y1, scale: float = 2.0) -> list[Token]:
     """Crop a zone from the deskewed image, OCR it at 2x, drop printed labels,
     and return tokens in ORIGINAL image coordinates."""
@@ -221,9 +275,19 @@ class Field:
     confidence: float
     bbox: list[int] | None = None          # x0,y0,x1,y1 in image coords
     raw: str = ""
+    corrected_from: str | None = None      # OCR text before reference-list correction
+    suggestion: str | None = None          # close reference match the officer may accept
+    match_score: float | None = None       # similarity behind the correction / suggestion
 
     def to_dict(self):
-        return {"value": self.value, "confidence": round(self.confidence, 3), "bbox": self.bbox, "raw": self.raw}
+        d = {"value": self.value, "confidence": round(self.confidence, 3), "bbox": self.bbox, "raw": self.raw}
+        if self.corrected_from:
+            d["corrected_from"] = self.corrected_from
+        if self.suggestion:
+            d["suggestion"] = self.suggestion
+        if self.match_score is not None:
+            d["match_score"] = self.match_score
+        return d
 
 
 @dataclass
@@ -232,6 +296,7 @@ class Extraction:
     tokens: list[Token] = field(default_factory=list)
     skew_deg: float = 0.0
     layout_scale: float = 1.0
+    vertical_stretch: float = 1.0
     side: str = "unknown"
     anchored: bool = True
     deskew_matrix: object = None
@@ -248,6 +313,7 @@ class Extraction:
             "fields": {k: v.to_dict() for k, v in self.fields.items()},
             "skew_deg": round(self.skew_deg, 2),
             "layout_scale": round(self.layout_scale, 3),
+            "vertical_stretch": round(self.vertical_stretch, 3),
             "side": self.side,
             "anchored": self.anchored,
             "warnings": self.warnings,
@@ -281,9 +347,7 @@ def _parse_date(s: str) -> str | None:
     if not m:
         return None
     dd, mm, yy = m.groups()
-    if not (1 <= int(dd) <= 31 and 1 <= int(mm) <= 12):
-        return f"{dd}.{mm}.{yy}"  # keep — validity is checked by rules
-    return f"{dd}.{mm}.{yy}"
+    return f"{int(dd):02d}.{mm}.{yy}"  # invalid dates are kept; validity is checked by the rules
 
 
 def run_ocr(image: np.ndarray) -> list[Token]:
@@ -387,10 +451,17 @@ def extract(image: np.ndarray, tokens: list[Token] | None = None) -> Extraction:
         rcx, rcy, rw, rh = x_left + REG_OFFSET[0] * ex.layout_scale, \
             y0 + REG_OFFSET[1] * ex.layout_scale, 152 * ex.layout_scale, 22 * ex.layout_scale
     ex.forensic_boxes["nrc_number"] = _clip([rcx - rw / 2 - 6, rcy - rh / 2 - 4, rcx + rw / 2 + 6, rcy + rh / 2 + 4])
-    reads = {}
+    reads, alts = {}, {}
+    stretch, landmarks = _vertical_stretch(toks, x_left, y0, ex.layout_scale, (title, card_tok, reg_tok))
+    ex.vertical_stretch = stretch
+    if stretch != 1.0:
+        ex.warnings.append(f"Card rows are {abs(stretch - 1) * 100:.0f}% {'taller' if stretch > 1 else 'shorter'} "
+                           f"than the calibrated layout; field zones were adjusted using printed labels "
+                           f"({', '.join(sorted(set(landmarks)))}).")
     scaled_boxes = {
-        name: tuple(value * ex.layout_scale for value in box)
-        for name, box in FIELD_BOXES.items()
+        name: (x0 * ex.layout_scale, x1 * ex.layout_scale,
+               y_lo * ex.layout_scale * stretch, y_hi * ex.layout_scale * stretch)
+        for name, (x0, x1, y_lo, y_hi) in FIELD_BOXES.items()
     }
     for name, (x0, x1, y_lo, y_hi) in scaled_boxes.items():
         full = []
@@ -407,6 +478,7 @@ def extract(image: np.ndarray, tokens: list[Token] | None = None) -> Extraction:
         need_crop = name in ALWAYS_CROP or not full or min(t.conf for t in full) < 0.95
         crop = _read_zone(deskewed, M, x_left + x0, y0 + y_lo, x_left + x1, y0 + y_hi) if need_crop else []
         reads[name] = _fuse(full, crop)
+        alts[name] = full + crop          # every reading of the zone, for reference-list matching
 
     def fld(name, value, toks):
         return _mk(toks, value)
@@ -438,9 +510,33 @@ def extract(image: np.ndarray, tokens: list[Token] | None = None) -> Extraction:
     else:
         ex.fields["sex"] = Field(None, 0.0)
 
-    pob = sorted([t for t in reads["pob"] if not re.search(r"\d", t.text)], key=lambda t: t.ry)
+    from .gazetteer import canonical, match_district
+
+    def _no_digits(toks_):
+        return [t for t in toks_ if not re.search(r"\d", t.text)]
+
+    pob = sorted(_no_digits(reads["pob"]), key=lambda t: t.ry)
     pv = [t for t in pob if not _is_district_token(t.text)]
     pdist = [t for t in pob if _is_district_token(t.text)]
+    # Other OCR readings of the same text, tried against the district list in post-correction
+    district_alts = {"district": [_clean_alpha(t.text) for t in alts["district"]],
+                     "place_of_birth_district": [_clean_alpha(_strip_d(t.text)) for t in _no_digits(alts["pob"])
+                                                 if _is_district_token(t.text)]}
+    if not pdist and pv:
+        # Some cards print the birth district without the "D." prefix: use the place-of-birth line
+        # that names a known district in any of its OCR readings (lowest line first, where the
+        # district is normally printed).
+        def _best(t):
+            readings = [t] + [a for a in _no_digits(alts["pob"]) if abs(a.ry - t.ry) < 10]
+            return max((match_district(_clean_alpha(a.text)) for a in readings), key=lambda m: m.score)
+
+        hit = next((t for t in reversed(pv) if _best(t).status in ("exact", "corrected")), None)
+        if hit is not None:
+            pdist = [hit]
+            district_alts["place_of_birth_district"] = [_clean_alpha(a.text) for a in _no_digits(alts["pob"])
+                                                        if abs(a.ry - hit.ry) < 10]
+            if len(pv) > 1:
+                pv = [t for t in pv if t is not hit]
     ex.fields["place_of_birth_village"] = fld("pob", _clean_alpha(pv[0].text) if pv else None, pv[:1])
     ex.fields["place_of_birth_district"] = fld("pob", _clean_alpha(_strip_d(pdist[0].text)) if pdist else None, pdist[:1])
 
@@ -461,21 +557,36 @@ def extract(image: np.ndarray, tokens: list[Token] | None = None) -> Extraction:
         sp_val = "NIL"
     ex.fields["special_marks"] = fld("special", sp_val, sp)
 
-    # Gazetteer post-correction for district fields (OCR slips such as KITWB -> KITWE)
-    from .gazetteer import snap_district
-
+    # District post-correction against the verified district list (OCR slips such as KITWB -> KITWE).
+    # High-similarity matches are corrected (the OCR text is kept in corrected_from); weaker matches
+    # are only suggested to the officer. Personal names are never corrected.
     for k in ("place_of_birth_district", "district"):
         f = ex.fields.get(k)
-        if f and f.value:
-            f.value, fixed = snap_district(f.value)
-            if fixed:
-                f.raw = f"{f.raw} (corrected)"
+        if not (f and f.value):
+            continue
+        # best match over the shown value and every other OCR reading of the same text
+        m = max((match_district(t) for t in [f.value, *district_alts.get(k, [])] if t),
+                key=lambda d: d.score)
+        if m.status == "exact" and m.district != f.value:
+            m.status = "corrected" if canonical(f.value) is None else "exact"
+        if m.status == "exact":
+            f.value = m.district
+        elif m.status == "corrected":
+            f.corrected_from, f.value, f.match_score = f.value, m.district, m.score
+        elif m.status == "suggested":
+            f.suggestion, f.match_score = m.district, m.score
     pp = ex.fields.get("parent_place_of_birth")
     if pp and pp.value:
         m = re.match(r"^(.*?)\s*D\s*\.\s*([A-Z' -]+)$", pp.value)
         if m:
-            dist, _ = snap_district(m.group(2).strip())
-            pp.value = f"{m.group(1).strip()} D.{dist}".strip()
+            dm = match_district(m.group(2).strip())
+            if dm.status in ("exact", "corrected"):
+                corrected = f"{m.group(1).strip()} D.{dm.district}".strip()
+                if corrected != pp.value and dm.status == "corrected":
+                    pp.corrected_from, pp.match_score = pp.value, dm.score
+                pp.value = corrected
+            elif dm.status == "suggested":
+                pp.suggestion, pp.match_score = dm.district, dm.score
 
     for k in ("full_name", "date_of_birth", "nrc_number"):
         f = ex.fields[k]

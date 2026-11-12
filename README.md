@@ -58,7 +58,11 @@ Full report: `models/evaluation.json` and the **Model performance** page in the 
 * The page is deskewed and a card-relative coordinate frame is scaled from the printed title, so field zones adapt to different scan sizes.
 * Pass 2: each field zone is cropped and re-read at 2×. The two passes are **fused** by keeping the most confident read for each position, which recovers words the full-page detector clips at printed lines.
 * Printed form labels are removed by glyph height plus fuzzy matching, weighted by OCR confidence.
-* District fields are snapped to a gazetteer of Zambia's 116 districts (`gazetteer.py`). Personal names are never auto-corrected.
+* Field zones adapt to each card's row spacing: printed labels such as VILLAGE, SPECIAL MARKS and the footer are found and used to measure how much taller or shorter the rows are than the calibrated layout.
+* District fields are matched to the verified list of Zambia's 116 districts in `data/zambia_districts.csv` (`gazetteer.py`). Every OCR reading of the field is tried:
+  * 85% similarity or more, or a single wrong letter that points to only one district: **corrected**. The case view shows the original reading.
+  * 70–85%: the OCR value is kept and the district is shown as a **suggestion** for the officer.
+  * The thresholds are `DISTRICT_AUTO_CORRECT` and `DISTRICT_SUGGEST` in `config.py`. Personal names, villages and chiefs are never auto-corrected.
 
 ### 2. Verification: `backend/smartclear/verify.py`
 * NRC number and DOB use **exact** matching after normalisation. DOB accepts dd.mm.yy, ISO, dd/mm/yyyy and other formats.
@@ -118,6 +122,8 @@ backend/tests/        pytest suite (verification, rules, live extraction)
 data/synthetic_nrc/   the 100 synthetic NRC PDFs supplied for the challenge
 data/ground_truth.csv     manually verified field values + fraud labels (type, tampered field, technique)
 data/taxpayer_records.csv synthetic "captured records" with a labelled test scenario per record
+data/zambia_districts.csv verified district list (district, province, district code) used for correction
+data/real_nrc/        real scans + labels.csv for scripts/evaluate_real.py; git-ignored, never commit
 models/               tamper_model.joblib · reference.json · tamper_metrics.json · evaluation.json
 frontend/             officer web app (built into frontend/dist and served by FastAPI)
 storage/              runtime only (SQLite DB, uploads, rendered images, OCR cache); git-ignored

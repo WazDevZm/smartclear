@@ -71,7 +71,16 @@ Please read these before presenting results:
 - [ ] Accessibility pass (contrast, focus states, screen reader labels) and a light theme for bright offices.
 - [ ] Keep the "flags support judgement" message visible in every view, as a governance requirement.
 
-                               |
+## Measuring on real cards
+
+Real NRCs are personal data. Keep them only in `data/real_nrc/`, which git ignores.
+
+1. Put scans in `data/real_nrc/` (PDF or image; front, or front and back).
+2. Run `.venv\Scripts\python.exe backend\scripts\evaluate_real.py`. The first run creates `labels.csv`.
+3. Have a person fill in the values printed on each card. Write `EMPTY` for a field that is blank on the card, and leave a cell empty to skip scoring it.
+4. Run the script again. It prints per-field accuracy with 95% intervals, the character error rate, and whether each error was a blank, a wrong value, or an invented value.
+
+Collect 30–50 cards across card versions and scan conditions before tuning anything. One card is not enough to choose OCR preprocessing.
 
 ## Useful commands
 

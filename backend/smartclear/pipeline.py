@@ -63,6 +63,42 @@ def _orient_page(image: np.ndarray, tokens: list[Token] | None = None) -> tuple[
     return best[1], best[2], best[3]
 
 
+TITLE_SCALE_TOLERANCE = 0.2   # rescale when the printed title is >20% off its calibrated width
+LOW_RES_SIDE = 1600           # pages smaller than this get a 2x retry when no title is found
+
+
+def _rescale_to_title(image: np.ndarray, tokens: list[Token]) -> tuple[np.ndarray, list[Token], float]:
+    """Resize the page so the 'REGISTRATION CARD' title has its calibrated width.
+
+    Field zones and the zone re-read (2x crops) were calibrated at that size; a high-resolution
+    scan or phone photo otherwise produces oversized crops that the detector shrinks and misreads.
+    Costs one extra OCR pass, only for pages that are far off the calibrated size."""
+    from .extraction import REFERENCE_TITLE_WIDTH
+
+    def find_title(toks):
+        return next((t for t in toks if "REGISTRATIONCARD" in re.sub(r"[^A-Z]", "", t.text.upper())
+                     and t.w > 30), None)
+
+    title = find_title(tokens)
+    base = 1.0
+    if title is None and max(image.shape[:2]) < LOW_RES_SIDE:
+        # Low-resolution scan: the title may be too small to read at all. Look again at 2x.
+        up = cv2.resize(image, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        up_tokens = run_ocr(up)
+        if find_title(up_tokens) is not None:
+            image, tokens, base = up, up_tokens, 2.0
+            title = find_title(tokens)
+    if title is None:
+        return image, tokens, base
+    scale = REFERENCE_TITLE_WIDTH / title.w
+    if abs(scale - 1.0) <= TITLE_SCALE_TOLERANCE:
+        return image, tokens, base
+    scale = float(np.clip(scale, 0.25, 3.0))
+    interp = cv2.INTER_AREA if scale < 1 else cv2.INTER_CUBIC
+    resized = cv2.resize(image, None, fx=scale, fy=scale, interpolation=interp)
+    return resized, run_ocr(resized), base * scale
+
+
 def _offset_box(box, off):
     if not box:
         return box
@@ -130,6 +166,13 @@ def _process_split(image, page_info, record):
         merged.forensic_boxes[key] = _offset_box(data_ex.forensic_boxes[key], data_off)
     if photo_ex is not None and photo_ex.forensic_boxes.get("nrc_number"):
         merged.forensic_boxes["nrc_number"] = _offset_box(photo_ex.forensic_boxes["nrc_number"], photo_off)
+    elif photo_ex is not None and photo_ex.fields.get("nrc_number") and photo_ex.fields["nrc_number"].bbox:
+        # the photo side is not anchored, so it has no forensic box: use the number's OCR box
+        x0, y0, x1, y1 = _offset_box(photo_ex.fields["nrc_number"].bbox, photo_off)
+        merged.forensic_boxes["nrc_number"] = [x0 - 6, y0 - 4, x1 + 6, y1 + 4]
+    # drop any degenerate box (e.g. an expected-offset guess clipped at the card edge)
+    merged.forensic_boxes = {k: b for k, b in merged.forensic_boxes.items()
+                             if b and b[2] - b[0] > 4 and b[3] - b[1] > 4}
     merged.side = data_ex.side
     merged.layout_scale = data_ex.layout_scale
     merged.vertical_stretch = data_ex.vertical_stretch
@@ -193,8 +236,12 @@ def process(image: np.ndarray, record: dict | None = None, tokens: list | None =
             if ex is not None:
                 disp = image
             else:
-                # one OCR pass, reused by extraction unless the page has to be turned
+                # one OCR pass, reused by extraction unless the page has to be turned or resized
                 image, toks, rotation = _orient_page(image)
+                if not page_info.get("cards"):
+                    image, toks, title_scale = _rescale_to_title(image, toks)
+                    if title_scale != 1.0:
+                        page_info["title_scale"] = round(title_scale, 3)
                 ex = extract(image, toks, page_cards=page_info.get("cards") or None)
                 disp = ex.deskewed if ex.deskewed is not None else image
     page_info["rotation_degrees"] = rotation

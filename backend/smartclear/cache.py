@@ -19,7 +19,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-CACHE_VERSION = "v6-orient-stretch-districts"
+CACHE_VERSION = "v7-title-rescale-legacy-guard"
 
 
 def _dir():

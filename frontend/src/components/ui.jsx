@@ -1,4 +1,5 @@
-import { AlertTriangle, CheckCircle2, CircleHelp, ShieldAlert, ShieldCheck, ShieldQuestion, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, CircleHelp, ShieldAlert, ShieldCheck, ShieldQuestion, XCircle } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 export const bandMeta = {
   clear: { label: 'Clear', cls: 'bg-emerald-400/10 text-emerald-300 ring-emerald-400/25', dot: 'bg-emerald-400', Icon: ShieldCheck },
@@ -68,3 +69,60 @@ export function PageHeader({ title, subtitle, children }) {
 }
 
 export const pct = (v, d = 1) => (v === null || v === undefined ? '—' : `${(v * 100).toFixed(d)}%`)
+
+// ---- Pagination -------------------------------------------------------------
+export const PAGE_SIZES = [10, 25, 50, 100]
+
+export function usePagination(rows, defaultPerPage = 25) {
+  const [page, setPage] = useState(1)
+  const [perPage, setPerPage] = useState(defaultPerPage)
+  const total = rows?.length ?? 0
+  const pageCount = Math.max(1, Math.ceil(total / perPage))
+  useEffect(() => { setPage(1) }, [rows, perPage])
+  const p = Math.min(page, pageCount)
+  const start = (p - 1) * perPage
+  const slice = rows ? rows.slice(start, start + perPage) : rows
+  return { page: p, setPage, perPage, setPerPage, total, pageCount, slice,
+           rangeStart: total ? start + 1 : 0, rangeEnd: Math.min(total, start + perPage) }
+}
+
+function pageNumbers(page, pageCount) {
+  const want = new Set([1, pageCount, page - 1, page, page + 1])
+  const pages = [...want].filter((n) => n >= 1 && n <= pageCount).sort((a, b) => a - b)
+  const out = []
+  let prev = 0
+  for (const n of pages) {
+    if (prev && n - prev > 1) out.push('…')
+    out.push(n)
+    prev = n
+  }
+  return out
+}
+
+export function Pagination({ page, pageCount, setPage, perPage, setPerPage, total, rangeStart, rangeEnd }) {
+  if (total === 0) return null
+  const btn = 'inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-semibold transition'
+  const idle = `${btn} text-slate-400 hover:bg-white/[0.06] hover:text-white`
+  const active = `${btn} bg-clear-400/15 text-clear-300 ring-1 ring-clear-400/30`
+  const arrow = 'inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/[0.06] hover:text-white disabled:cursor-not-allowed disabled:opacity-30'
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.06] px-5 py-3">
+      <div className="flex items-center gap-3 text-xs text-slate-500">
+        <span>Showing <span className="font-semibold text-slate-300">{rangeStart}–{rangeEnd}</span> of <span className="font-semibold text-slate-300">{total}</span></span>
+        <label className="flex items-center gap-1.5">
+          <span className="sr-only">Rows per page</span>
+          <select className="select" value={perPage} onChange={(e) => setPerPage(Number(e.target.value))} aria-label="Rows per page">
+            {PAGE_SIZES.map((n) => <option key={n} value={n}>{n} / page</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="flex items-center gap-1">
+        <button className={arrow} onClick={() => setPage(page - 1)} disabled={page <= 1} aria-label="Previous page"><ChevronLeft size={16} /></button>
+        {pageNumbers(page, pageCount).map((n, i) => n === '…'
+          ? <span key={`e${i}`} className="px-1 text-xs text-slate-600">…</span>
+          : <button key={n} className={n === page ? active : idle} onClick={() => setPage(n)} aria-current={n === page ? 'page' : undefined}>{n}</button>)}
+        <button className={arrow} onClick={() => setPage(page + 1)} disabled={page >= pageCount} aria-label="Next page"><ChevronRight size={16} /></button>
+      </div>
+    </div>
+  )
+}

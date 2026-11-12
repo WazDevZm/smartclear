@@ -10,3 +10,5 @@ storage/
 data/real_nrc/
 *.log
 .env
+data/real/
+

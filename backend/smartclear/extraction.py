@@ -1,15 +1,21 @@
 """AI/OCR extraction of NRC fields.
 
 Pipeline:
-  1. RapidOCR (PP-OCR detection + recognition on ONNX Runtime) reads every text line.
-  2. The page side is identified from its registration-card title or NRC number.
-  3. Front-side pages are deskewed using the median angle of detected text boxes.
-  4. A card-relative coordinate frame is anchored on the printed title
-     ("REGISTRATION CARD") and the card number line, so the layout survives shifts,
-     small rotations and different scan offsets.
-  5. Printed form labels are discarded by glyph height (data is typed larger), and the
+  1. The page is normalised: cards on a larger scan page are detected (cards.py)
+     and the page is scaled so the card is at the calibrated ~924 px width.
+  2. RapidOCR (PP-OCR detection + recognition on ONNX Runtime) reads every text line.
+  3. The page side is identified from its registration-card title or NRC number.
+  4. Front-side pages are deskewed using the median angle of the detected text boxes.
+  5. A card-relative coordinate frame is anchored on the printed title
+     ("NATIONAL REGISTRATION CARD") and the card number line, so the layout survives
+     shifts, small rotations and different scan offsets.
+  6. The printed-layout variant is detected from where its labels sit: the taller
+     "legacy green" card gets its own zone calibration (FIELD_BOXES_LEGACY). On the
+     standard layout, the zones are stretched to the card's measured row spacing.
+  7. Printed form labels are discarded by glyph height (data is typed larger), and the
      remaining data tokens are assigned to fields by zone.
-  6. Values are normalised with field-specific character repair (O->0 in numbers etc.).
+  8. Values are normalised with field-specific character repair (O->0 in numbers etc.);
+     district fields are matched to the verified district list.
 """
 from __future__ import annotations
 
@@ -20,7 +26,7 @@ from functools import lru_cache
 
 import numpy as np
 
-DATE_RE = re.compile(r"(\d{1,2})[.,:\s]?(\d{2})[.,:\s]?(\d{2})$")   # real cards may print 8.12.23
+DATE_RE = re.compile(r"(\d{1,2})[.,:/\s-]?(\d{1,2})[.,:/\s-]?(\d{2}|\d{4})$")   # real cards may print 8.12.23
 REG_RE = re.compile(r"(\d{6})\s*/\s*(\d{2})\s*/\s*(\d)")
 CARD_RE = re.compile(r"(\d{8})")
 
@@ -74,9 +80,37 @@ OTHER_LABELS = ["FULLNAME", "FATHERSMOTHERSPLACEOFBIRTH", "CHIEF", "REGISTRATION
 STRETCH_LIMITS = (0.85, 1.30)   # plausible vertical stretch relative to the synthetic layout
 STRETCH_DEADBAND = 0.03         # ignore stretch estimates this close to 1 (measurement noise)
 
+# Legacy (pre-2018) green card: identical cell layout, but everything is printed
+# about 2.8x taller relative to card width, and the columns sit further apart.
+# Calibrated on the real 2019-issue scan at the standard 924 px card width.
+FIELD_BOXES_LEGACY = {
+    "name": (-4, 620, 84, 146),
+    "dob": (-45, 335, 150, 220),
+    "pob": (310, 615, 130, 226),
+    "sex": (635, 790, 140, 222),
+    "parent": (105, 730, 238, 296),
+    "village": (-4, 375, 312, 362),
+    "district": (475, 780, 312, 362),
+    "chief": (-4, 420, 372, 430),
+    "registration_date": (465, 780, 340, 425),
+    "special": (60, 460, 440, 495),
+}
+# Printed-label offsets on the synthetic layout (dy from the card-number line),
+# used to estimate how much taller the legacy layout is.
+_LABEL_DY = {"FULLNAME": 26.0, "DATEOFBIRTH": 56.0, "VILLAGE": 104.0, "CHIEF": 130.0, "SPECIALMARKS": 156.0}
+
 LONG_LABELS = ["DATEOFBIRTH", "PLACEOFBIRTH", "FATHERSMOTHERSPLACEOFBIRTH", "SPECIALMARKS", "REGISTRATIONDATE",
                "DATEOFRENUNCIATION", "FULLNAME", "VILLAGE", "DISTRICT", "REGISTRATIONNUMBER"]
 SHORT_LABELS = ["SEX", "CHIEF", "CARDNO"]
+
+# Deterministic strip of the multi-word printed labels, applied to joined output.
+# More reliable than fuzzy single-word matching when OCR merges a label into the value line.
+LABEL_PHRASES = re.compile(
+    r"(REGISTRATION\s*CARD|REGISTRATION\s*NUMBER|REGISTRATION\s*DATE|REGISTRATION\s*OFFICER|"
+    r"FULL\s*NAME|DATE\s*OF\s*BIRTH|FATHER'?\s*/?\s*MOTHER'?\s*S?('S)?(\s*PLACE\s*OF\s*BIRTH)?|"
+    r"PLACE\s*OF\s*BIRTH|SPECIAL\s*MARKS|DATE\s*OF\s*RENUN[CR][IO]IATI[O0]N|"
+    r"REPUBLIC\s*OF\s*ZAMBIA|CARD\s*N[O0]|RIGHT\s*THUMB\s*PRINT)",
+    re.IGNORECASE)
 
 
 def _is_label(word: str, conf: float = 1.0) -> bool:
@@ -98,6 +132,31 @@ def _is_label(word: str, conf: float = 1.0) -> bool:
         return conf < 0.9
     score = max(fuzz.partial_ratio(w, l) for l in LONG_LABELS)
     return score >= 80 or (score >= 58 and conf < 0.9)
+
+
+def _layout_stretch(toks: list["Token"], y0: float) -> float:
+    """Estimate how much taller the printed layout is than the synthetic reference.
+
+    Compares where known printed labels sit (dy from the card-number line) with
+    their calibrated synthetic offsets. Returns 1.0 when it cannot tell.
+    """
+    from rapidfuzz import fuzz
+
+    ratios = []
+    for t in toks:
+        j = re.sub(r"[^A-Z]", "", t.text.upper())
+        if not j:
+            continue
+        dy = t.ry - y0
+        if dy <= 0:
+            continue
+        for key, syn_dy in _LABEL_DY.items():
+            if fuzz.ratio(j, key) >= 80:
+                ratios.append(dy / syn_dy)
+                break
+    if len(ratios) >= 2:
+        return float(np.median(ratios))
+    return 1.0
 
 
 def _is_district_token(text: str) -> bool:
@@ -209,8 +268,92 @@ def _vertical_stretch(toks: list[Token], x_left: float, y0: float, scale: float,
     return (1.0 if abs(stretch - 1.0) < STRETCH_DEADBAND else stretch), used
 
 
-def _read_zone(img: np.ndarray, M: np.ndarray, x0, y0, x1, y1, scale: float = 2.0) -> list[Token]:
-    """Crop a zone from the deskewed image, OCR it at 2x, drop printed labels,
+SMALL_PRINT_RATIO = 0.75   # zone tokens shorter than this x the zone's tallest text are printed labels
+
+
+def _drop_small_print(toks: list[Token]) -> list[Token]:
+    """Drop printed-label fragments from one zone's re-read: labels are printed much smaller
+    than the typed data in the same zone (e.g. a garbled 'FULL NAME' above the name), which a
+    fixed pixel threshold misses when a label lands right at the cut-off."""
+    if len(toks) < 2:
+        return toks
+    tallest = max(t.h for t in toks)
+    return [t for t in toks if t.h >= SMALL_PRINT_RATIO * tallest]
+
+
+def _read_zones_batch(img: np.ndarray, M: np.ndarray, items: list[tuple], scale: float, min_h: float,
+                      legacy: bool, enhance_name: bool = True) -> dict[str, list[Token]]:
+    """OCR several zone crops in ONE engine call.
+
+    Each crop is drawn on a mid-grey canvas with separator gaps, the engine runs once,
+    and tokens are mapped back into ORIGINAL (pre-deskew) coordinates. This replaces
+    ~8 separate OCR calls with one, which is the difference between a minute and
+    seconds per document on CPU.
+    """
+    if not items:
+        return {}
+    import cv2
+
+    PAD, GAP = 24, 24
+    H, W = img.shape[:2]
+    strips = []
+    max_w = 0
+    for name, x0, y0, x1, y1 in items:
+        x0, y0 = max(0, int(x0)), max(0, int(y0))
+        x1, y1 = min(W, int(x1)), min(H, int(y1))
+        if x1 - x0 < 8 or y1 - y0 < 8:
+            strips.append(None)
+            continue
+        # Crops are OCR'd as they are: on the batch canvas, the grayscale+CLAHE view used for the
+        # full-page pass makes the faint printed labels legible (e.g. 'FULL NAME' leaks into the name).
+        crop = cv2.resize(img[y0:y1, x0:x1], None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        crop = cv2.copyMakeBorder(crop, 12, 12, 12, 12, cv2.BORDER_REPLICATE)
+        if legacy and name == "name" and enhance_name:
+            gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+            crop = cv2.cvtColor(cv2.createCLAHE(2.0, (8, 8)).apply(gray), cv2.COLOR_GRAY2BGR)
+        strips.append((crop, x0, y0))
+        max_w = max(max_w, crop.shape[1])
+    total_h = PAD + sum(s[0].shape[0] + GAP for s in strips if s is not None) + PAD
+    canvas = np.full((total_h, max_w + 2 * PAD, 3), 127, np.uint8)
+    pos: dict[str, tuple[int, tuple]] = {}
+    y = PAD
+    for it, s in zip(items, strips):
+        if s is None:
+            continue
+        crop, x0, y0 = s
+        canvas[y:y + crop.shape[0], PAD:PAD + crop.shape[1]] = crop
+        pos[it[0]] = (y, (crop.shape[0], crop.shape[1], x0, y0, scale))
+        y += crop.shape[0] + GAP
+
+    result, _ = get_engine()(canvas, use_cls=False)
+    out: dict[str, list[Token]] = {it[0]: [] for it in items}
+    Minv = cv2.invertAffineTransform(M)
+    for quad, text, conf in result or []:
+        q = np.array(quad, dtype=float)
+        ymid = q[:, 1].mean()
+        for name, (strip_y, (strip_h, strip_w, x0, y0, sc)) in pos.items():
+            if strip_y <= ymid < strip_y + strip_h:
+                qs = (q - [PAD, strip_y] - 12) / sc + [x0, y0]
+                h = float(np.linalg.norm(qs[3] - qs[0]))
+                if h < min_h or conf < 0.5:
+                    break
+                words = [w for w in str(text).split() if legacy or not _is_label(w, float(conf))]
+                if not words:
+                    break
+                q_orig = np.hstack([qs, np.ones((4, 1))]) @ Minv.T
+                tk = Token(text=" ".join(words), conf=float(conf), quad=q_orig)
+                tk.rx, tk.ry = qs.mean(0)
+                tk.w = float(np.linalg.norm(qs[1] - qs[0]))
+                out[name].append(tk)
+                break
+    for name in out:
+        out[name] = _reading_order(out[name])
+    return out
+
+
+def _read_zone(img: np.ndarray, M: np.ndarray, x0, y0, x1, y1, scale: float = 2.0, min_h: float = 7.5,
+                legacy: bool = False, enhance: str | None = None) -> list[Token]:
+    """Crop a zone from the deskewed image, OCR it larger, drop printed labels,
     and return tokens in ORIGINAL image coordinates."""
     import cv2
 
@@ -222,15 +365,20 @@ def _read_zone(img: np.ndarray, M: np.ndarray, x0, y0, x1, y1, scale: float = 2.
     crop = ocr_view(img[y0:y1, x0:x1])
     crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
     crop = cv2.copyMakeBorder(crop, 12, 12, 12, 12, cv2.BORDER_REPLICATE)
+    if enhance == "clahe":
+        # The legacy card's print is dark on a coloured guilloché background;
+        # the waves are the main OCR confounder, so flatten local contrast.
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+        crop = cv2.cvtColor(cv2.createCLAHE(2.0, (8, 8)).apply(gray), cv2.COLOR_GRAY2BGR)
     result, _ = get_engine()(crop, use_cls=False)
     Minv = cv2.invertAffineTransform(M)
     toks = []
     for quad, text, conf in result or []:
         q = (np.array(quad, dtype=float) - 12) / scale + [x0, y0]
         h = float(np.linalg.norm(q[3] - q[0]))
-        if h < 7.5 or conf < 0.5:           # printed labels are ~5-6px; typed data is 9px+
+        if h < min_h or conf < 0.5:           # printed labels are small; typed data is large
             continue
-        words = [w for w in str(text).split() if not _is_label(w, float(conf))]
+        words = [w for w in str(text).split() if legacy or not _is_label(w, float(conf))]
         if not words:
             continue
         q_orig = np.hstack([q, np.ones((4, 1))]) @ Minv.T
@@ -336,18 +484,21 @@ def _mk(tokens: list[Token], value: str | None, raw: str | None = None) -> Field
 
 
 def _clean_alpha(s: str) -> str:
-    s = s.upper().translate(ALPHA_FIX)
+    s = LABEL_PHRASES.sub(" ", s.upper())
+    s = s.translate(ALPHA_FIX)
     s = re.sub(r"[^A-Z .'\-]", "", s)
     return re.sub(r"\s+", " ", s).strip()
 
 
 def _parse_date(s: str) -> str | None:
     s = s.translate(DIGIT_FIX)
-    m = DATE_RE.search(re.sub(r"[^\d.,:]", "", s))
+    m = DATE_RE.search(re.sub(r"[^\d.,:/\s-]", "", s))
     if not m:
         return None
     dd, mm, yy = m.groups()
-    return f"{int(dd):02d}.{mm}.{yy}"  # invalid dates are kept; validity is checked by the rules
+    if not (1 <= int(dd) <= 31 and 1 <= int(mm) <= 12):
+        return f"{dd}.{mm}.{yy}"  # keep — validity is checked by rules
+    return f"{int(dd):02d}.{int(mm):02d}.{yy}"
 
 
 def run_ocr(image: np.ndarray) -> list[Token]:
@@ -358,7 +509,8 @@ def run_ocr(image: np.ndarray) -> list[Token]:
     return toks
 
 
-def extract(image: np.ndarray, tokens: list[Token] | None = None) -> Extraction:
+def extract(image: np.ndarray, tokens: list[Token] | None = None,
+            page_cards: list[tuple[int, int, int, int]] | None = None) -> Extraction:
     toks = tokens if tokens is not None else run_ocr(image)
     ex = Extraction(tokens=toks)
 
@@ -386,18 +538,24 @@ def extract(image: np.ndarray, tokens: list[Token] | None = None) -> Extraction:
             reg_tok, reg_val = t, f"{m.group(1)}/{m.group(2)}/{m.group(3)}"
             break
     if reg_tok is None:
-        # fallback: 9 digit run (OCR dropped the slashes)
+        # Fallback: 9 digit run (OCR dropped the slashes). Letters are only allowed to be
+        # ones a digit can be confused with (O~0, I~1, S~5, B~8, G~6, Z~2, A~4) — a stray
+        # 'P' or 'C' means it is a word, not a number.
+        DIGITISH = set("OIDQBSLGAZ")
         for t in toks:
+            if any(ch.upper() not in DIGITISH for ch in re.findall(r"[A-Za-z]", t.text)):
+                continue
             digits = re.sub(r"\D", "", t.text.translate(DIGIT_FIX))
             if len(digits) == 9 and not t.text.strip().upper().startswith("Z") and t.cy < image.shape[0] * 0.4:
                 reg_tok, reg_val = t, f"{digits[:6]}/{digits[6:8]}/{digits[8]}"
                 break
     ex.fields["nrc_number"] = _mk([reg_tok], reg_val) if reg_tok else Field(None, 0.0)
 
-    # --- 3. Anchors on the data side
+    # --- 3. Anchors on the data side. The data-side title is "NATIONAL REGISTRATION
+    # CARD"; other "REGISTRATION …" strings on the card (REGISTRATION NUMBER,
+    # REGISTRATION OFFICER, REGISTRATION DATE, the footer) must not anchor the frame.
     title = next((t for t in toks
-                  if "REGIST" in t.text.upper().replace(" ", "")
-                  and "CARD" in t.text.upper().replace(" ", "") and t.w > 120), None)
+                  if "REGISTRATIONCARD" in re.sub(r"[^A-Z]", "", t.text.upper()) and t.w > 60), None)
     card_tok, card_val = None, None
     if title is not None:
         for t in toks:
@@ -440,45 +598,76 @@ def extract(image: np.ndarray, tokens: list[Token] | None = None) -> Extraction:
     ex.deskewed = deskewed
     H_, W_ = deskewed.shape[:2]
 
+    # Pick the field-zone template: the legacy (taller-printed) card is detected
+    # from where its printed labels sit, not from a fixed size threshold.
+    y_stretch = _layout_stretch(toks, y0)
+    legacy = y_stretch > 1.5
+    min_h = 11.5 * y_stretch if legacy else 11.5
+    read_scale = 2.8 if legacy else 2.0
+    if legacy:
+        ex.warnings.append("Different card layout detected (taller-print issue); "
+                           "field zones were auto-adjusted — check values against the image.")
+        ex.warnings.append("Tamper model was trained on synthetic specimens only; "
+                           "treat tamper scores as indicative, not conclusive.")
+
     def _clip(b):
         return [max(0, int(b[0])), max(0, int(b[1])), min(W_, int(b[2])), min(H_, int(b[3]))]
 
-    # Registration-number box (photo side): around the OCR'd token, or at its expected offset
+    # Registration-number box (photo side): around the OCR'd token, or at its expected offset.
+    # NOTE: dot-perforated registration numbers defeat RapidOCR; an earlier aggressive-crop
+    # attempt returned plausible garbage from mismatched noise, which is worse than an honest
+    # "unreadable". The officer transcribes these.
     if reg_tok is not None:
         rcx, rcy = M @ [reg_tok.cx, reg_tok.cy, 1.0]
         rw, rh = max(reg_tok.w, 140), max(reg_tok.h, 22)
+        ex.forensic_boxes["nrc_number"] = _clip([rcx - rw / 2 - 6, rcy - rh / 2 - 4, rcx + rw / 2 + 6, rcy + rh / 2 + 4])
+    elif "nrc_number" not in ex.forensic_boxes:
+        s_ = 1.0 if legacy else ex.layout_scale
+        rcx, rcy, rw, rh = x_left + REG_OFFSET[0] * s_, y0 + REG_OFFSET[1] * s_, 152 * s_, 22 * s_
+        ex.forensic_boxes["nrc_number"] = _clip([rcx - rw / 2 - 6, rcy - rh / 2 - 4, rcx + rw / 2 + 6, rcy + rh / 2 + 4])
+
+    if legacy:
+        # calibrated at the normalised 924 px card width (cards.normalize_page)
+        ex.vertical_stretch = y_stretch
+        scaled_boxes = dict(FIELD_BOXES_LEGACY)
     else:
-        rcx, rcy, rw, rh = x_left + REG_OFFSET[0] * ex.layout_scale, \
-            y0 + REG_OFFSET[1] * ex.layout_scale, 152 * ex.layout_scale, 22 * ex.layout_scale
-    ex.forensic_boxes["nrc_number"] = _clip([rcx - rw / 2 - 6, rcy - rh / 2 - 4, rcx + rw / 2 + 6, rcy + rh / 2 + 4])
-    reads, alts = {}, {}
-    stretch, landmarks = _vertical_stretch(toks, x_left, y0, ex.layout_scale, (title, card_tok, reg_tok))
-    ex.vertical_stretch = stretch
-    if stretch != 1.0:
-        ex.warnings.append(f"Card rows are {abs(stretch - 1) * 100:.0f}% {'taller' if stretch > 1 else 'shorter'} "
-                           f"than the calibrated layout; field zones were adjusted using printed labels "
-                           f"({', '.join(sorted(set(landmarks)))}).")
-    scaled_boxes = {
-        name: (x0 * ex.layout_scale, x1 * ex.layout_scale,
-               y_lo * ex.layout_scale * stretch, y_hi * ex.layout_scale * stretch)
-        for name, (x0, x1, y_lo, y_hi) in FIELD_BOXES.items()
-    }
+        # standard layout: scale by the title width, stretch rows to the measured label positions
+        stretch, landmarks = _vertical_stretch(toks, x_left, y0, ex.layout_scale, (title, card_tok, reg_tok))
+        ex.vertical_stretch = stretch
+        if stretch != 1.0:
+            ex.warnings.append(f"Card rows are {abs(stretch - 1) * 100:.0f}% "
+                               f"{'taller' if stretch > 1 else 'shorter'} than the calibrated layout; "
+                               f"field zones were adjusted using printed labels "
+                               f"({', '.join(sorted(set(landmarks)))}).")
+        scaled_boxes = {
+            name: (x0 * ex.layout_scale, x1 * ex.layout_scale,
+                   y_lo * ex.layout_scale * stretch, y_hi * ex.layout_scale * stretch)
+            for name, (x0, x1, y_lo, y_hi) in FIELD_BOXES.items()
+        }
+    per_zone = {}
+    crop_items = []
     for name, (x0, x1, y_lo, y_hi) in scaled_boxes.items():
         full = []
         for t in toks:
-            if t is title or t is card_tok or t is reg_tok or t.h < 11.5 or t.conf < 0.5:
+            if t is title or t is card_tok or t is reg_tok or t.h < min_h or t.conf < 0.5:
                 continue
             dx, dy = t.rx - x_left, t.ry - y0
             if x0 <= dx <= x1 and y_lo <= dy <= y_hi:
-                words = [w for w in t.text.split() if not _is_label(w, t.conf)]
+                words = [w for w in t.text.split() if legacy or not _is_label(w, t.conf)]
                 if words:
                     full.append(Token(text=" ".join(words), conf=t.conf, quad=t.quad, rx=t.rx, ry=t.ry))
         for ft in full:
             ft.rx, ft.ry = (M @ [ft.cx, ft.cy, 1.0])
-        need_crop = name in ALWAYS_CROP or not full or min(t.conf for t in full) < 0.95
-        crop = _read_zone(deskewed, M, x_left + x0, y0 + y_lo, x_left + x1, y0 + y_hi) if need_crop else []
-        reads[name] = _fuse(full, crop)
-        alts[name] = full + crop          # every reading of the zone, for reference-list matching
+        per_zone[name] = full
+        if name in ALWAYS_CROP or not full or min(t.conf for t in full) < 0.95:
+            crop_items.append((name, x_left + x0, y0 + y_lo, x_left + x1, y0 + y_hi))
+    crops = _read_zones_batch(deskewed, M, crop_items, read_scale,
+                              min_h=7.5 * y_stretch if legacy else 7.5, legacy=legacy)
+    if not legacy:
+        crops = {name: _drop_small_print(toks_) for name, toks_ in crops.items()}
+    reads = {name: _fuse(full, crops.get(name, [])) for name, full in per_zone.items()}
+    # every reading of each zone (both passes), for reference-list matching
+    alts = {name: full + crops.get(name, []) for name, full in per_zone.items()}
 
     def fld(name, value, toks):
         return _mk(toks, value)

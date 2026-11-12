@@ -116,14 +116,26 @@ def stats(user=Depends(current_user)):
         q = lambda s, *a: c.execute(s, a).fetchone()[0]  # noqa: E731
         bands = {r["risk_band"]: r["n"] for r in c.execute("SELECT risk_band, COUNT(*) n FROM cases GROUP BY risk_band")}
         status = {r["status"]: r["n"] for r in c.execute("SELECT status, COUNT(*) n FROM cases GROUP BY status")}
+        outcome_rows = {r["verification"]: r["n"] for r in c.execute("SELECT verification, COUNT(*) n FROM cases GROUP BY verification")}
         flag_counts: dict[str, int] = {}
         for r in c.execute("SELECT result FROM cases"):
             for f in json.loads(r["result"])["flags"]:
                 flag_counts[f["title"]] = flag_counts.get(f["title"], 0) + 1
         avg_ms = q("SELECT AVG(json_extract(result,'$.timing_ms.total')) FROM cases") or 0
+        # 14-day throughput for the dashboard chart
+        weekly = []
+        for r in c.execute(
+            "SELECT substr(created_at, 1, 10) day, COUNT(*) n,"
+            " CAST(AVG(json_extract(result,'$.timing_ms.total')) AS INTEGER) avg_ms"
+            " FROM cases GROUP BY day ORDER BY day DESC LIMIT 14"):
+            weekly.append({"day": r["day"], "count": r["n"], "avg_ms": r["avg_ms"] or 0})
+        weekly = list(reversed(weekly))
         return {"total": q("SELECT COUNT(*) FROM cases"), "bands": bands, "status": status,
                 "taxpayers": q("SELECT COUNT(*) FROM taxpayers"),
                 "top_flags": sorted(flag_counts.items(), key=lambda kv: -kv[1])[:8],
+                "flag_total": sum(flag_counts.values()),
+                "outcome_counts": outcome_rows,
+                "weekly": weekly,
                 "avg_processing_ms": round(avg_ms)}
 
 
@@ -262,6 +274,35 @@ async def upload(file: UploadFile = File(...), tpin: str | None = Form(None), us
     return get_case(cid, user)
 
 
+@app.post("/api/batches")
+async def batch_upload(files: list[UploadFile] = File(...), tpin: str | None = Form(None), user=Depends(current_user)):
+    """Verify many scans in one submission and get a per-document outcome summary."""
+    if len(files) > 50:
+        raise HTTPException(400, "Batch is limited to 50 documents")
+    results = []
+    with db.conn() as c:
+        for f in files:
+            item = {"filename": f.filename or "unnamed"}
+            try:
+                data = await f.read()
+                if len(data) > 15 * 1024 * 1024:
+                    item["error"] = "File too large (max 15 MB)"
+                elif not data:
+                    item["error"] = "Empty file"
+                else:
+                    cid = create_case(c, data, item["filename"], tpin or None, user["username"])
+                    r = c.execute("SELECT ref, risk_band, verification, n_flags, full_name, nrc_number "
+                                  "FROM cases WHERE id=?", (cid,)).fetchone()
+                    item.update({"id": cid, "ref": r["ref"], "risk_band": r["risk_band"],
+                                 "verification": r["verification"], "n_flags": r["n_flags"],
+                                 "full_name": r["full_name"], "nrc_number": r["nrc_number"]})
+            except Exception as e:
+                item["error"] = f"Could not process document: {e}"
+            results.append(item)
+    done = [r for r in results if r.get("id")]
+    return {"processed": len(done), "failed": len(results) - len(done), "results": results}
+
+
 class Review(BaseModel):
     action: str          # approve | reject | escalate | request_info
     note: str | None = None
@@ -313,6 +354,32 @@ def audit_log(user=Depends(current_user)):
         return [dict(r) for r in c.execute("SELECT * FROM audit ORDER BY id DESC LIMIT 200")]
 
 
+@app.get("/api/audit.csv")
+def audit_csv(user=Depends(current_user), limit: int = 1000):
+    import csv
+    import io
+
+    rows = []
+    with db.conn() as c:
+        for r in c.execute("SELECT ts, actor, action, case_id, detail FROM audit ORDER BY id DESC LIMIT ?",
+                           (max(1, min(limit, 5000)),)):
+            d = r["detail"] or ""
+            if isinstance(d, str):
+                try:
+                    d = json.dumps(json.loads(d), ensure_ascii=False)
+                except Exception:
+                    pass
+            rows.append([r["ts"], r["actor"], r["action"], r["case_id"] or "", d])
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["timestamp", "actor", "action", "case_id", "detail"])
+    for row in rows:
+        w.writerow(row)
+    from fastapi.responses import Response
+    return Response(buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": 'attachment; filename="smartclear-audit.csv"'})
+
+
 # ---- Frontend (built SPA)
 if FRONTEND_DIST.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
@@ -324,7 +391,9 @@ if FRONTEND_DIST.exists():
         f = FRONTEND_DIST / path
         if path and f.is_file():
             return FileResponse(f)
-        return FileResponse(FRONTEND_DIST / "index.html")
+        # Never cache the app shell — it references hashed assets and must always
+        # revalidate, otherwise a rebuilt UI can keep running the old JavaScript.
+        return FileResponse(FRONTEND_DIST / "index.html", headers={"Cache-Control": "no-cache, must-revalidate"})
 else:
     @app.get("/")
     def root():

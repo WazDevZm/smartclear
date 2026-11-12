@@ -1,0 +1,19 @@
+# Keep the Space image small and free of anything that should not ship
+.git
+.venv
+node_modules
+frontend/node_modules
+frontend/dist
+storage
+__pycache__
+*.pyc
+.pytest_cache
+data/real
+.github
+.vscode
+.idea
+docker-compose.yml
+Dockerfile
+docker-compose*.yml
+*.log
+.env

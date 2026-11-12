@@ -1,22 +1,32 @@
-"""Per-field extraction accuracy on hand-labelled REAL NRC scans.
+"""Evaluate extraction on *real* scanned NRCs — the counterpart to evaluate.py.
 
-Real NRCs are personal data: keep them only in ``data/real_nrc/`` (git-ignored) on approved machines.
+Real NRCs are personal data: keep them only in a git-ignored folder (data/real_nrc/ or data/real/)
+on approved machines, e.g. inside the ZRA sandbox.
 
-Layout:
-  data/real_nrc/<scan>.pdf|.png|.jpg   one scan per card (front, or front + back pages)
-  data/real_nrc/labels.csv             one row per scan, verified by a person against the card
+Two modes:
 
-labels.csv columns: file, then any of the field names below. In a field cell:
-  * the value printed on the card (dates as dd.mm.yy, NRC as NNNNNN/NN/N, card no. as Z########)
-  * EMPTY  if the card genuinely has nothing there (the extractor should return no value)
-  * blank  if not labelled; the field is not scored for that card
+1. Labelled set (per-field accuracy):
+       python backend/scripts/evaluate_real.py                # uses data/real_nrc/
+       python backend/scripts/evaluate_real.py --dir data/real
+   The folder holds the scans plus labels.csv (created as a template on the first run):
+   columns file + any field names below. In a field cell write the value printed on the card
+   (dates dd.mm.yy, NRC NNNNNN/NN/N, card no. Z########), EMPTY if the card has nothing there,
+   or leave it blank to skip scoring it. Prints per-field accuracy with 95% Wilson intervals,
+   the character error rate, and whether errors were blanks, wrong values or invented values;
+   writes <dir>/results.json.
 
-Run:  python backend/scripts/evaluate_real.py            (creates a labels template if none exists)
-Writes data/real_nrc/results.json and prints per-field accuracy with 95% Wilson intervals, the
-character error rate, and which errors were blanks vs wrong values.
+2. Quick look at individual scans (dump fields, confidences, flags and warnings):
+       python backend/scripts/evaluate_real.py path/to/scan.pdf [more.pdf ...]
+       python backend/scripts/evaluate_real.py --truth truth.json scan.pdf
+   --truth is a JSON object {filename: {field: expected_value}}; labelled fields are marked
+   MATCH / MISREAD.
+
+NOTE: one real scan is an anecdote, not a measurement. Report per-field results with
+confidence intervals and the sample size, as set out in NEXT_STEPS.md — never a single number.
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import json
 import math
@@ -33,8 +43,6 @@ from smartclear.document import prepare_document_pages  # noqa: E402
 from smartclear.gazetteer import canonical  # noqa: E402
 from smartclear.pipeline import process_pages  # noqa: E402
 
-REAL_DIR = DATA_DIR / "real_nrc"
-LABELS = REAL_DIR / "labels.csv"
 FIELDS = ["nrc_number", "card_number", "full_name", "date_of_birth", "sex", "place_of_birth_village",
           "place_of_birth_district", "parent_place_of_birth", "village", "district", "chief",
           "registration_date", "special_marks"]
@@ -59,35 +67,71 @@ def norm(field: str, value: str | None) -> str:
     return v
 
 
-def write_template():
-    REAL_DIR.mkdir(parents=True, exist_ok=True)
-    scans = sorted(p.name for p in REAL_DIR.iterdir() if p.suffix.lower() in SCANS)
-    with open(LABELS, "w", newline="") as fh:
+def run(path: Path) -> tuple[dict, float]:
+    t0 = time.time()
+    images, _ = prepare_document_pages(path.read_bytes(), path.name)
+    result, _, _ = process_pages(images)
+    return result, time.time() - t0
+
+
+# ---------------------------------------------------------------- quick look (mode 2)
+def dump(paths: list[Path], truth_file: Path | None):
+    truth = json.loads(truth_file.read_text()) if truth_file else {}
+    totals = hits = 0
+    for p in paths:
+        result, secs = run(p)
+        exp = truth.get(p.name, {})
+        print(f"\n=== {p.name} ===  (risk {result['risk']['band']}, "
+              f"verification {result['verification']['overall']}, {secs:.1f}s)")
+        for k, f in result["extraction"]["fields"].items():
+            line = f"  {k:28} {str(f['value']):26} conf {f['confidence']:.2f}"
+            if f.get("corrected_from"):
+                line += f"  (read as {f['corrected_from']})"
+            if f.get("suggestion"):
+                line += f"  (possible: {f['suggestion']})"
+            if k in exp:
+                totals += 1
+                ok = norm(k, f["value"]) == norm(k, str(exp[k]))
+                hits += ok
+                line += f"  expected {exp[k]!r}  {'MATCH' if ok else 'MISREAD'}"
+            print(line)
+        print(f"  flags: {', '.join(f['code'] for f in result['flags']) or 'none'}")
+        for w in result["extraction"]["warnings"]:
+            print(f"  warning: {w}")
+    if totals:
+        print(f"\nLabelled fields: {hits}/{totals} exact reads ({100 * hits / totals:.1f}%)")
+        print("Quote this with a confidence interval and the sample size — one document is an anecdote.")
+
+
+# ---------------------------------------------------------------- labelled set (mode 1)
+def write_template(folder: Path, labels: Path):
+    folder.mkdir(parents=True, exist_ok=True)
+    scans = sorted(p.name for p in folder.iterdir() if p.suffix.lower() in SCANS)
+    with open(labels, "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(["file", *FIELDS])
         for s in scans:
             w.writerow([s] + [""] * len(FIELDS))
-    print(f"Created {LABELS} with {len(scans)} scan(s). Fill in the values printed on each card "
+    print(f"Created {labels} with {len(scans)} scan(s). Fill in the values printed on each card "
           f"(EMPTY for a blank field) and run again.")
 
 
-def main():
-    if not LABELS.exists():
-        write_template()
+def evaluate(folder: Path):
+    labels = folder / "labels.csv"
+    if not labels.exists():
+        write_template(folder, labels)
         return
-    rows = list(csv.DictReader(open(LABELS, newline="", encoding="utf-8-sig")))
+    rows = list(csv.DictReader(open(labels, newline="", encoding="utf-8-sig")))
     stats = {f: {"n": 0, "ok": 0, "blank": 0, "wrong": 0, "hallucinated": 0, "edits": 0, "chars": 0}
              for f in FIELDS}
     per_card, times = [], []
     for row in rows:
-        path = REAL_DIR / row["file"]
+        path = folder / row["file"]
         if not path.exists():
             print(f"!! missing scan {row['file']}")
             continue
-        t0 = time.time()
-        images, _ = prepare_document_pages(path.read_bytes(), path.name)
-        result, _, _ = process_pages(images)
-        times.append(time.time() - t0)
+        result, secs = run(path)
+        times.append(secs)
         got = {k: v["value"] for k, v in result["extraction"]["fields"].items()}
         errors = {}
         for f in FIELDS:
@@ -111,7 +155,7 @@ def main():
             if want:
                 s["edits"] += Levenshtein.distance(have, want)
                 s["chars"] += len(want)
-        per_card.append({"file": row["file"], "errors": errors, "seconds": round(times[-1], 2),
+        per_card.append({"file": row["file"], "errors": errors, "seconds": round(secs, 2),
                          "risk": result["risk"]["band"], "warnings": result["extraction"]["warnings"]})
         print(f"{row['file']}: {len(errors)} field error(s) {sorted(errors)}")
 
@@ -132,8 +176,19 @@ def main():
         print(f"\nAll labelled fields: {total_ok}/{total_n} = {total_ok / total_n:.1%}   (* = key field)")
     if times:
         print(f"Median processing time: {sorted(times)[len(times) // 2]:.1f}s over {len(times)} scan(s)")
-    out = {"cards": per_card, "fields": stats}
-    (REAL_DIR / "results.json").write_text(json.dumps(out, indent=1))
+    (folder / "results.json").write_text(json.dumps({"cards": per_card, "fields": stats}, indent=1))
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("scans", nargs="*", type=Path, help="scan files for a quick look (mode 2)")
+    ap.add_argument("--truth", type=Path, default=None, help="JSON {filename: {field: expected}} for mode 2")
+    ap.add_argument("--dir", type=Path, default=DATA_DIR / "real_nrc", help="labelled folder for mode 1")
+    args = ap.parse_args()
+    if args.scans:
+        dump(args.scans, args.truth)
+    else:
+        evaluate(args.dir)
 
 
 if __name__ == "__main__":

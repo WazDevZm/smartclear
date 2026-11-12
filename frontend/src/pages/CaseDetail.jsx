@@ -144,7 +144,7 @@ export default function CaseDetail() {
         <div className="space-y-6">
           <div className="card p-4">
             <div className="mb-3 flex items-center justify-between px-1">
-              <div className="label">Original document</div>
+              <div className="label">{r.preprocessing?.card_cropped ? 'Cropped card preview' : 'Grayscale document preview'}</div>
               <button onClick={() => setOverlay(!overlay)} className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white">
                 {overlay ? <EyeOff size={14} /> : <Eye size={14} />} {overlay ? 'Hide' : 'Show'} evidence
               </button>
@@ -154,6 +154,16 @@ export default function CaseDetail() {
               {[['#34d399', 'Matches record'], ['#fbbf24', 'Needs confirmation'], ['#fb7185', 'Mismatch / suspected alteration'], ['#38bdf8', 'Extracted']].map(([col, l]) =>
                 <span key={l} className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: col }} />{l}</span>)}
             </div>
+            {r.preprocessing && <div className="mt-2 px-1 text-[11px] text-slate-500">
+              Pages: {r.preprocessing.pages?.map((page) =>
+                `${page.index + 1} ${page.side}${page.rotation_degrees ? ` rotated ${page.rotation_degrees}°` : ''}`
+              ).join(' · ') || r.preprocessing.page_count}
+              {r.preprocessing.cropped_page_count > 0 && ` · ${r.preprocessing.cropped_page_count} card crop${r.preprocessing.cropped_page_count === 1 ? '' : 's'}`}
+              {' · grayscale OCR'}
+            </div>}
+            {r.extraction.warnings?.length > 0 && <div className="mt-3 rounded-lg border border-amber-400/20 bg-amber-400/[0.05] p-3 text-xs text-amber-200">
+              {r.extraction.warnings.map((warning) => <div key={warning}>{warning}</div>)}
+            </div>}
           </div>
 
           <div className="card p-5">
@@ -163,9 +173,17 @@ export default function CaseDetail() {
                 <div key={k} onMouseEnter={() => setActive(k)} onMouseLeave={() => setActive(null)}
                   className={`flex items-center justify-between gap-3 rounded-lg px-2 py-2 transition ${hi(k)}`}>
                   <span className="text-xs text-slate-500">{l}</span>
-                  <span className="flex items-center gap-2 text-right">
-                    <span className="font-mono text-xs text-slate-200">{f[k]?.value || <span className="text-slate-600">—</span>}</span>
-                    {f[k]?.value && <span className={`font-mono text-[10px] ${f[k].confidence < 0.8 ? 'text-amber-400' : 'text-slate-600'}`}>{Math.round(f[k].confidence * 100)}%</span>}
+                  <span className="flex flex-col items-end text-right">
+                    <span className="flex items-center gap-2">
+                      <span className="font-mono text-xs text-slate-200">{f[k]?.value || <span className="text-slate-600">—</span>}</span>
+                      {f[k]?.value && <span className={`font-mono text-[10px] ${f[k].confidence < 0.8 ? 'text-amber-400' : 'text-slate-600'}`}>{Math.round(f[k].confidence * 100)}%</span>}
+                    </span>
+                    {f[k]?.corrected_from && <span className="font-mono text-[10px] text-sky-400"
+                      title="Matched to the verified district list; check against the image">
+                      read as {f[k].corrected_from} · {Math.round(f[k].match_score)}% list match</span>}
+                    {f[k]?.suggestion && <span className="font-mono text-[10px] text-amber-400"
+                      title="Close to a district in the verified list, but not close enough to correct automatically">
+                      possible: {f[k].suggestion} ({Math.round(f[k].match_score)}%)</span>}
                   </span>
                 </div>
               ))}

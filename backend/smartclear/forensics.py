@@ -60,12 +60,12 @@ def crop_box(img: np.ndarray, box) -> np.ndarray:
 
 
 def _rec(crop: np.ndarray) -> tuple[str, float]:
-    from .extraction import get_engine
+    from .extraction import get_engine, ocr_view
 
     if crop.size == 0 or crop.shape[0] < 6 or crop.shape[1] < 6:
         return "", 0.0
     try:
-        res, _ = get_engine()(crop, use_det=False, use_cls=False)
+        res, _ = get_engine()(ocr_view(crop), use_det=False, use_cls=False)
         if res:
             return str(res[0][0]), float(res[0][1])
     except Exception:

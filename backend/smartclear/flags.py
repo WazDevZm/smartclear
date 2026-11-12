@@ -16,7 +16,7 @@ import numpy as np
 from .config import (MIN_REGISTRATION_AGE, OCR_LOW_CONFIDENCE, REFERENCE_PATH, TAMPER_FIELD_THRESHOLD,
                      TAMPER_MODEL_PATH)
 from .forensics import FEATURE_LABELS, FIELDS, compute_features, crop_box, vectorize
-from .gazetteer import DISTRICT_PROVINCE
+from .gazetteer import canonical, province
 from .verify import parse_date
 
 SEVERITY_WEIGHT = {"high": 70, "medium": 40, "low": 15}
@@ -103,18 +103,19 @@ def rule_flags(fields: dict, conf: dict, today: date | None = None) -> list[dict
     if nrc and re.fullmatch(r"\d{6}/\d{2}/\d", nrc) and codes:
         code = nrc.split("/")[1]
         expected = codes.get(code)
-        if expected and pob_d and expected != pob_d:
+        expected = canonical(expected) or expected
+        if expected and pob_d and expected != (canonical(pob_d) or pob_d):
             flags.append(_flag("NRC_CODE_DISTRICT", "high", "NRC code doesn't match district",
                                f"NRC district code {code} belongs to {expected}, but the card shows place of birth "
                                f"district {pob_d}.", "nrc_number", {"code": code, "expected": expected, "card": pob_d}))
         elif not expected:
             flags.append(_flag("NRC_CODE_UNKNOWN", "low", "Unrecognised NRC district code",
                                f"District code {code} is not in the reference table.", "nrc_number", {"code": code}))
-    if pob_d and dist and pob_d != dist:
+    if pob_d and dist and (canonical(pob_d) or pob_d) != (canonical(dist) or dist):
         flags.append(_flag("DISTRICT_INCONSISTENT", "high", "District fields disagree",
                            f"Place-of-birth district is {pob_d} but the district field reads {dist}.", "district",
                            {"place_of_birth_district": pob_d, "district": dist,
-                            "provinces": [DISTRICT_PROVINCE.get(pob_d), DISTRICT_PROVINCE.get(dist)]}))
+                            "provinces": [province(pob_d), province(dist)]}))
 
     if dob:
         if dob > today:

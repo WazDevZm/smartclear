@@ -19,7 +19,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-CACHE_VERSION = "v5-split-batch-noguessedreg"
+CACHE_VERSION = "v6-orient-stretch-districts"
 
 
 def _dir():

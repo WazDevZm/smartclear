@@ -73,12 +73,20 @@ So: on real scans, expect exact reads on the bold printed fields (card no., regi
 * Real scans are normalised first: card regions are detected on the page (`cards.detect_cards`) and the page is scaled so the card matches the calibrated 924 px card width. Tighter-cropped or single-card scans pass through unchanged.
 * The printed-layout variant is detected from where its labels sit. The taller "legacy green" issue gets its own zone calibration (`FIELD_BOXES_LEGACY`) and an honesty warning on every case.
 * **RapidOCR** (PaddleOCR PP-OCR detection and recognition models on ONNX Runtime) runs fully on-premise.
+* Every PDF page is cropped and OCR'd independently. Pages are classified as card front or back; front-side fields and the back-side NRC number are then merged with their page coordinates preserved. Unknown pages are not used to fill fields.
+* A clearly dominant quadrilateral card is cropped and perspective-corrected; if boundaries are ambiguous, the page is kept intact and the case warns officers to review nearby stamps or handwriting.
+* Pages without a readable horizontal card anchor are checked at quarter-turn rotations. Unknown layouts are still not mapped to new field positions automatically.
+* OCR uses a grayscale, contrast-normalized view. The uploaded original and its color pixels remain unchanged for storage and forensic analysis.
 * Pass 1: full-page OCR finds anchors (the "NATIONAL REGISTRATION CARD" title, the card number and the registration number) and estimates skew from the text-box angles.
-* The page is deskewed and a card-relative coordinate frame is built, so the layout survives shifts and rotation.
+* The page is deskewed and a card-relative coordinate frame is scaled from the printed title, so field zones adapt to different scan sizes.
+* On the standard layout, field zones also adapt to each card's row spacing: printed labels such as VILLAGE, SPECIAL MARKS and the footer are found and used to measure how much taller or shorter the rows are than the calibrated layout.
 * Pass 2: each field zone is cropped and re-read at 2× (2.8× for the legacy card; the name field on legacy cards additionally gets a CLAHE contrast pass). The two passes are **fused** by keeping the most confident read for each position, which recovers words the full-page detector clips at printed lines.
 * Printed form labels are removed by glyph height plus fuzzy matching, weighted by OCR confidence; multi-word label phrases are also stripped deterministically.
-* Dates may use 2- or 4-digit years and `.`/`/`/`-` separators.
-* District fields are snapped to a gazetteer of Zambia's 116 districts (`gazetteer.py`). Personal names are never auto-corrected.
+* Dates may use 1- or 2-digit days, 2- or 4-digit years and `.`/`/`/`-` separators.
+* District fields are matched to the verified list of Zambia's 116 districts in `data/zambia_districts.csv` (`gazetteer.py`). Every OCR reading of the field is tried:
+  * 85% similarity or more, or a single wrong letter that points to only one district: **corrected**. The case view shows the original reading.
+  * 70–85%: the OCR value is kept and the district is shown as a **suggestion** for the officer.
+  * The thresholds are `DISTRICT_AUTO_CORRECT` and `DISTRICT_SUGGEST` in `config.py`. Personal names, villages and chiefs are never auto-corrected.
 * The perforated (dot-matrix) registration number found on genuine old-issue NRCs is **not** machine-readable with this OCR stack; the system reports the number as unreadable rather than guessing. An officer must transcribe it.
 
 ### Performance: `backend/smartclear/pipeline.py`, `cards.py`, `cache.py`
@@ -145,6 +153,8 @@ backend/tests/        pytest suite (verification, rules, live extraction)
 data/synthetic_nrc/   the 100 synthetic NRC PDFs supplied for the challenge
 data/ground_truth.csv     manually verified field values + fraud labels (type, tampered field, technique)
 data/taxpayer_records.csv synthetic "captured records" with a labelled test scenario per record
+data/zambia_districts.csv verified district list (district, province, district code) used for correction
+data/real_nrc/        real scans + labels.csv for scripts/evaluate_real.py; git-ignored, never commit
 models/               tamper_model.joblib · reference.json · tamper_metrics.json · evaluation.json
 frontend/             officer web app (built into frontend/dist and served by FastAPI)
 storage/              runtime only (SQLite DB, uploads, rendered images, OCR cache); git-ignored
@@ -175,5 +185,6 @@ The repo is Space-ready (see `Dockerfile`, port 7860). The Space serves the buil
 > Or push directly to the Space's git remote instead of linking GitHub. Note: a public Space is public — synthetic data only; real NRCs belong in ZRA's controlled sandbox, not on a public URL.
 
 ## Data handling
-* Development used **synthetic** NRCs plus one genuine team-supplied scan (used to develop the page normalisation and the legacy-template zones; the scan is not in this repository). Nothing leaves the machine, and no cloud OCR or LLM is called.
+* Development used **synthetic** NRCs plus a few genuine team-supplied scans (used to develop the page normalisation, the legacy-template zones and the row-spacing adjustment; the scans are not in this repository). Nothing leaves the machine, and no cloud OCR or LLM is called.
+* The uploaded source file is stored unchanged; preprocessing crops clear card regions, reads every PDF page, and creates a grayscale evidence preview.
 * Real ZRA documents should be processed only inside ZRA's controlled sandbox. See NEXT_STEPS.md.

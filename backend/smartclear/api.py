@@ -19,8 +19,8 @@ from pydantic import BaseModel
 
 from . import db
 from .config import FRONTEND_DIST, MODELS_DIR, STORAGE_DIR
-from .document import load_document
-from .pipeline import encode_png, process
+from .document import prepare_document_pages
+from .pipeline import encode_png, process_pages
 from .verify import fmt_nrc
 
 app = FastAPI(title="SmartClear API", version="0.1.0",
@@ -189,9 +189,27 @@ def case_image(case_id: int, token: str | None = None, authorization: str | None
 
 
 def create_case(c, data: bytes, filename: str, tpin: str | None, actor: str, tokens=None, ref=None) -> int:
-    image = load_document(data, filename)
+    images, preprocessing = prepare_document_pages(data, filename)
     record = db.get_taxpayer(c, tpin=tpin) if tpin else None
-    result, disp = process(image, record, tokens)
+    result, disp, pages = process_pages(images, record, tokens)
+    result["preprocessing"] = {
+        **preprocessing,
+        "ocr_input": "grayscale with contrast enhancement",
+        "pages": [
+            {
+                "index": i,
+                "card_cropped": preprocessing["page_cropped"][i],
+                "side": page["side"],
+                "rotation_degrees": page["rotation_degrees"],
+            }
+            for i, page in enumerate(pages)
+        ],
+    }
+    for i, was_cropped in enumerate(preprocessing["page_cropped"]):
+        if not was_cropped:
+            result["extraction"]["warnings"].append(
+                f"Page {i + 1}: card boundary was not confidently detected; review fields near stamps or handwriting."
+            )
     if record is None and not tpin:
         # Fall back to looking the taxpayer up by the extracted NRC number
         nrc = result["extraction"]["fields"]["nrc_number"]["value"]

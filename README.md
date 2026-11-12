@@ -1,3 +1,12 @@
+---
+title: SmartClear — AI NRC Verification for ZRA
+emoji: 🛡️
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
 # SmartClear — AI NRC Verification for ZRA
 
 > this is the SA team
@@ -153,6 +162,17 @@ storage/              runtime only (SQLite DB, uploads, rendered images, OCR cac
 | GET | `/stats`, `/evaluation`, `/taxpayers`, `/audit` | Dashboard, metrics, records, audit log |
 
 Interactive docs: http://localhost:8000/docs
+
+## Deploying to Hugging Face Spaces
+
+The repo is Space-ready (see `Dockerfile`, port 7860). The Space serves the built officer UI **and** `/api` from one process; the demo database is seeded at image build time (synthetic NRCs only — never upload real ones to a public Space).
+
+1. Create a free account at huggingface.co → **New Space** → name it (e.g. `smartclear`) → SDK **Docker** → visibility **Public** (demo) or **Private** (controlled access).
+2. In Space **Settings**, choose **Link GitHub repository**, pick `WazDevZm/smartclear`, branch `master` — pushes to `master` now auto-rebuild and redeploy.
+3. Wait for the build (~5–10 min), open the Space URL, sign in with **officer / smartclear**.
+4. Re-seed the demo DB at any time by rebuilding the Space (or deleting `storage/smartclear.db` — it is baked in at build).
+
+> Or push directly to the Space's git remote instead of linking GitHub. Note: a public Space is public — synthetic data only; real NRCs belong in ZRA's controlled sandbox, not on a public URL.
 
 ## Data handling
 * Development used **synthetic** NRCs plus one genuine team-supplied scan (used to develop the page normalisation and the legacy-template zones; the scan is not in this repository). Nothing leaves the machine, and no cloud OCR or LLM is called.

@@ -16,9 +16,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Minimal runtime libs for onnxruntime / OpenCV (headless) / pypdfium2
+# Minimal runtime libs: onnxruntime/OpenCV/pypdfium2 need these
+# (full opencv-python, pulled by rapidocr, needs X and GL libs on slim images)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgomp1 libglib2.0-0 \
+    && apt-get install -y --no-install-recommends libgomp1 libglib2.0-0 libxcb1 libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./

@@ -102,7 +102,10 @@ export default function Landing() {
           <div className="inline-flex items-center gap-2 rounded-full border border-zra-gold/30 bg-zra-gold/10 px-3 py-1 text-xs font-semibold text-[#E5C77A]">
             <span className="h-1.5 w-1.5 rounded-full bg-zra-gold" /> Zambia Revenue Authority · AI Unit pilot
           </div>
-          <h1 className="mt-6 font-display text-5xl font-extrabold leading-[1.05] tracking-tight text-white sm:text-6xl">
+          <p className="mt-4 font-display text-sm font-semibold italic tracking-wide text-[#E5C77A]">
+            My Tax, Your Tax, Our Destiny
+          </p>
+          <h1 className="mt-4 font-display text-5xl font-extrabold leading-[1.05] tracking-tight text-white sm:text-6xl">
             Verify every NRC<br /><span className="grad-text">in seconds, not minutes.</span>
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-400">
@@ -191,7 +194,10 @@ export default function Landing() {
       <footer className="relative z-10 border-t border-white/[0.06] py-8">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 text-xs text-slate-500 sm:px-6">
           <Logo size={26} />
-          <span>A ZRA AI Unit pilot · AI for Public Good Challenge · Mukuba UniPod (CBU)</span>
+          <span className="flex flex-col items-center gap-1 text-center">
+            <span className="font-semibold italic text-[#E5C77A]">My Tax, Your Tax, Our Destiny</span>
+            <span>A ZRA AI Unit pilot · AI for Public Good Challenge · Mukuba UniPod (CBU)</span>
+          </span>
           <span>Prototype: not for production use</span>
         </div>
       </footer>

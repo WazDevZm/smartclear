@@ -31,7 +31,7 @@ Requirements: Python 3.11–3.12, Node 18+.
 open http://localhost:8000
 ```
 
-Sign in with **officer / smartclear** (or **supervisor / smartclear**).
+Sign in with **officer / futureminds** (or **supervisor / futureminds**).
 
 `./run.sh --retrain` rebuilds the OCR cache, retrains the tamper model and re-runs the evaluation.
 
@@ -180,7 +180,7 @@ The repo is Space-ready (see `Dockerfile`, port 7860). The Space serves the buil
 
 1. Create a free account at huggingface.co → **New Space** → name it (e.g. `smartclear`) → SDK **Docker** → visibility **Public** (demo) or **Private** (controlled access).
 2. In Space **Settings**, choose **Link GitHub repository**, pick `WazDevZm/smartclear`, branch `master` — pushes to `master` now auto-rebuild and redeploy.
-3. Wait for the build (~5–10 min), open the Space URL, sign in with **officer / smartclear**.
+3. Wait for the build (~5–10 min), open the Space URL, sign in with **officer / futureminds**.
 4. Re-seed the demo DB at any time by rebuilding the Space (or deleting `storage/smartclear.db` — it is baked in at build).
 
 > Or push directly to the Space's git remote instead of linking GitHub. Note: a public Space is public — synthetic data only; real NRCs belong in ZRA's controlled sandbox, not on a public URL.

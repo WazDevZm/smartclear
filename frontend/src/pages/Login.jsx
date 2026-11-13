@@ -39,7 +39,7 @@ export default function Login() {
           <button className="btn-primary w-full py-3" disabled={busy}>{busy ? <Spinner /> : <>Sign in <ArrowRight size={16} /></>}</button>
           <div className="flex items-start gap-2 rounded-lg bg-white/[0.03] p-3 text-xs text-slate-400">
             <Lock size={14} className="mt-0.5 shrink-0 text-clear-400" />
-            <span>Pilot demo accounts: <b className="text-slate-200">officer</b> or <b className="text-slate-200">supervisor</b>, password <b className="text-slate-200">smartclear</b>.
+            <span>Pilot demo accounts: <b className="text-slate-200">officer</b> or <b className="text-slate-200">supervisor</b>, password <b className="text-slate-200">futureminds</b>.
               Production would use ZRA single sign-on.</span>
           </div>
         </form>

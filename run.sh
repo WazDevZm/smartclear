@@ -34,5 +34,5 @@ if [ ! -f storage/smartclear.db ] || [ "${1:-}" = "--retrain" ]; then
   .venv/bin/python backend/scripts/evaluate.py
 fi
 
-echo "▸ SmartClear running at http://localhost:8000  (login: officer / smartclear)"
+echo "▸ SmartClear running at http://localhost:8000  (login: officer / futureminds)"
 cd backend && exec ../.venv/bin/uvicorn smartclear.api:app --host 127.0.0.1 --port 8000

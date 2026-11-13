@@ -39,8 +39,8 @@ if not _secret_file.exists():
     _secret_file.write_text(secrets.token_hex(32))
 SECRET = os.environ.get("SMARTCLEAR_SECRET", _secret_file.read_text()).encode()
 OFFICERS = {  # demo accounts for the pilot sandbox
-    "officer": {"password": "smartclear", "name": "Demo Officer", "role": "Registration Officer", "unit": "TSE"},
-    "supervisor": {"password": "smartclear", "name": "Demo Supervisor", "role": "Supervisor", "unit": "Domestic Taxes"},
+    "officer": {"password": "futureminds", "name": "Demo Officer", "role": "Registration Officer", "unit": "TSE"},
+    "supervisor": {"password": "futureminds", "name": "Demo Supervisor", "role": "Supervisor", "unit": "Domestic Taxes"},
 }
 
 

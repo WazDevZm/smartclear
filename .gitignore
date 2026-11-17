@@ -8,3 +8,17 @@ frontend/dist/
 storage/
 *.log
 .env
+
+# OCR training: environments, upstream code, weights, large data
+.venv_*/
+ocr_training/PaddleOCR/
+ocr_training/pretrained/
+ocr_training/output/
+ocr_training/inference_test/
+ocr_training/colab/*.zip
+ocr_training/colab/parts*/
+ocr_training/colab/ocr_rec.zip
+data/nrc_synth_v5/
+data/ocr_rec/
+claude data/
+ocr_training/results/*.log

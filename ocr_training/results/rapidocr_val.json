@@ -1,0 +1,151 @@
+{
+  "engine": "rapidocr",
+  "split": "val",
+  "crops": 60,
+  "exact_match": 0.75,
+  "seconds_per_crop": 0.033,
+  "per_field": {
+    "card_no": {
+      "n": 5,
+      "exact": 1.0,
+      "similarity": 0.92
+    },
+    "chief": {
+      "n": 4,
+      "exact": 0.75,
+      "similarity": 0.9773
+    },
+    "district": {
+      "n": 4,
+      "exact": 0.5,
+      "similarity": 0.9375
+    },
+    "dob": {
+      "n": 5,
+      "exact": 1.0,
+      "similarity": 1.0
+    },
+    "given": {
+      "n": 5,
+      "exact": 0.8,
+      "similarity": 0.9857
+    },
+    "marks": {
+      "n": 4,
+      "exact": 1.0,
+      "similarity": 1.0
+    },
+    "pob": {
+      "n": 5,
+      "exact": 0.2,
+      "similarity": 0.7461
+    },
+    "reg_date": {
+      "n": 4,
+      "exact": 1.0,
+      "similarity": 1.0
+    },
+    "reg_no": {
+      "n": 6,
+      "exact": 0.8333,
+      "similarity": 0.9848
+    },
+    "renunc": {
+      "n": 4,
+      "exact": 0.0,
+      "similarity": 0.0
+    },
+    "sex": {
+      "n": 5,
+      "exact": 0.8,
+      "similarity": 0.8
+    },
+    "surname": {
+      "n": 5,
+      "exact": 1.0,
+      "similarity": 0.9778
+    },
+    "village": {
+      "n": 4,
+      "exact": 0.75,
+      "similarity": 0.9583
+    }
+  },
+  "errors_sample": [
+    {
+      "crop": "val/clean/nrc_0001_back_pob.png",
+      "truth": "V. NDOLA",
+      "pred": "VNDOLA"
+    },
+    {
+      "crop": "val/clean/nrc_0001_back_sex.png",
+      "truth": "F",
+      "pred": "正"
+    },
+    {
+      "crop": "val/clean/nrc_0001_back_renunc.png",
+      "truth": "-",
+      "pred": "一"
+    },
+    {
+      "crop": "val/clean/nrc_0004_back_pob.png",
+      "truth": "T. LUSAKA",
+      "pred": "TEUBAKA"
+    },
+    {
+      "crop": "val/clean/nrc_0004_back_chief.png",
+      "truth": "CHITIMUKULU",
+      "pred": "CHITIMUKOLU"
+    },
+    {
+      "crop": "val/clean/nrc_0004_back_renunc.png",
+      "truth": "-",
+      "pred": "一"
+    },
+    {
+      "crop": "val/clean/nrc_0013_back_pob.png",
+      "truth": "T. MONGU",
+      "pred": "TMONGU"
+    },
+    {
+      "crop": "val/clean/nrc_0013_back_district.png",
+      "truth": "CHINSALI",
+      "pred": "CHINSAAI"
+    },
+    {
+      "crop": "val/clean/nrc_0013_back_renunc.png",
+      "truth": "-",
+      "pred": "一"
+    },
+    {
+      "crop": "val/phone/nrc_0013_back_village.png",
+      "truth": "CHIBWE",
+      "pred": "CHIBNE"
+    },
+    {
+      "crop": "val/phone/nrc_0013_back_district.png",
+      "truth": "CHINSALI",
+      "pred": "CHINSAAI"
+    },
+    {
+      "crop": "val/phone/nrc_0013_back_renunc.png",
+      "truth": "-",
+      "pred": "一"
+    },
+    {
+      "crop": "val/clean/nrc_0027_front_reg_no.png",
+      "truth": "162110/04/1",
+      "pred": "162110/0471"
+    },
+    {
+      "crop": "val/clean/nrc_0027_back_given.png",
+      "truth": "KONDWANI MOSES",
+      "pred": "KONDWANI NOSES"
+    },
+    {
+      "crop": "val/clean/nrc_0027_back_pob.png",
+      "truth": "V. CHIPATA",
+      "pred": "VCHIPATA"
+    }
+  ]
+}

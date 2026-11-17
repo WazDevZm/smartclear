@@ -1,0 +1,151 @@
+{
+  "engine": "trocr",
+  "split": "val",
+  "crops": 60,
+  "exact_match": 0.75,
+  "seconds_per_crop": 2.049,
+  "per_field": {
+    "card_no": {
+      "n": 5,
+      "exact": 0.8,
+      "similarity": 0.98
+    },
+    "chief": {
+      "n": 4,
+      "exact": 0.75,
+      "similarity": 0.9688
+    },
+    "district": {
+      "n": 4,
+      "exact": 0.5,
+      "similarity": 0.9375
+    },
+    "dob": {
+      "n": 5,
+      "exact": 0.8,
+      "similarity": 0.9714
+    },
+    "given": {
+      "n": 5,
+      "exact": 0.6,
+      "similarity": 0.9568
+    },
+    "marks": {
+      "n": 4,
+      "exact": 1.0,
+      "similarity": 1.0
+    },
+    "pob": {
+      "n": 5,
+      "exact": 0.6,
+      "similarity": 0.9356
+    },
+    "reg_date": {
+      "n": 4,
+      "exact": 1.0,
+      "similarity": 1.0
+    },
+    "reg_no": {
+      "n": 6,
+      "exact": 0.8333,
+      "similarity": 0.9848
+    },
+    "renunc": {
+      "n": 4,
+      "exact": 0.25,
+      "similarity": 0.25
+    },
+    "sex": {
+      "n": 5,
+      "exact": 0.8,
+      "similarity": 0.8
+    },
+    "surname": {
+      "n": 5,
+      "exact": 0.8,
+      "similarity": 0.975
+    },
+    "village": {
+      "n": 4,
+      "exact": 1.0,
+      "similarity": 1.0
+    }
+  },
+  "errors_sample": [
+    {
+      "crop": "val/clean/nrc_0001_back_given.png",
+      "truth": "THANDIWE",
+      "pred": "THANDINE"
+    },
+    {
+      "crop": "val/clean/nrc_0001_back_dob.png",
+      "truth": "13.8.85",
+      "pred": "18.8.85"
+    },
+    {
+      "crop": "val/clean/nrc_0001_back_sex.png",
+      "truth": "F",
+      "pred": "E"
+    },
+    {
+      "crop": "val/clean/nrc_0001_back_chief.png",
+      "truth": "KAMBWALI",
+      "pred": "KAMBWAI"
+    },
+    {
+      "crop": "val/clean/nrc_0001_back_renunc.png",
+      "truth": "-",
+      "pred": ":"
+    },
+    {
+      "crop": "val/clean/nrc_0004_back_given.png",
+      "truth": "MEMORY RUTH",
+      "pred": "MEMORY AUTH"
+    },
+    {
+      "crop": "val/clean/nrc_0004_back_surname.png",
+      "truth": "CHILUFYA",
+      "pred": "CHILUFFA"
+    },
+    {
+      "crop": "val/clean/nrc_0004_back_pob.png",
+      "truth": "T. LUSAKA",
+      "pred": "T. EOSAKA"
+    },
+    {
+      "crop": "val/clean/nrc_0004_back_renunc.png",
+      "truth": "-",
+      "pred": ":"
+    },
+    {
+      "crop": "val/phone/nrc_0004_front_reg_no.png",
+      "truth": "314957/02/1",
+      "pred": "31@957/02/1"
+    },
+    {
+      "crop": "val/clean/nrc_0013_back_district.png",
+      "truth": "CHINSALI",
+      "pred": "CHINSAII"
+    },
+    {
+      "crop": "val/clean/nrc_0013_back_renunc.png",
+      "truth": "-",
+      "pred": ":"
+    },
+    {
+      "crop": "val/phone/nrc_0013_back_district.png",
+      "truth": "CHINSALI",
+      "pred": "CHINSAII"
+    },
+    {
+      "crop": "val/clean/nrc_0027_back_card_no.png",
+      "truth": "Z 10976296",
+      "pred": "Z 1097@296"
+    },
+    {
+      "crop": "val/clean/nrc_0027_back_pob.png",
+      "truth": "V. CHIPATA",
+      "pred": "W. CHIPATA"
+    }
+  ]
+}

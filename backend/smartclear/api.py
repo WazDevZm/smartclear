@@ -86,23 +86,7 @@ def login(body: Login):
 
 @app.get("/api/health")
 def health():
-    from .flags import tamper_model
-
-    return {"status": "ok", "tamper_model_loaded": tamper_model() is not None}
-
-
-@app.get("/api/public/metrics")
-def public_metrics():
-    """Headline evaluation numbers for the landing page (no personal data)."""
-    p = MODELS_DIR / "evaluation.json"
-    if not p.exists():
-        return {}
-    e = json.loads(p.read_text())
-    return {"documents": e["dataset"]["documents"],
-            "extraction_accuracy": e["extraction"]["key_fields_accuracy"],
-            "verification_accuracy": e["verification"]["accuracy"],
-            "fraud_recall": e["fraud_flagging"]["recall"], "fraud_precision": e["fraud_flagging"]["precision"],
-            "median_seconds": round(e["processing_time_ms"]["median"] / 1000, 1)}
+    return {"status": "ok"}
 
 
 @app.get("/api/me")
@@ -207,7 +191,7 @@ def create_case(c, data: bytes, filename: str, tpin: str | None, actor: str, tok
                 result["flags"].append(F._flag("RECORD_MISMATCH", "high", "Doesn't match captured record",
                                                "Mismatch on: " + ", ".join(F.FIELD_LABEL[b] for b in bad) + ".",
                                                bad[0]))
-            result["risk"] = F.risk(result["flags"], result["verification"], result["tamper"])
+            result["risk"] = F.risk(result["flags"], result["verification"])
             tpin = record["tpin"]
     # Duplicate check: same NRC number already presented with different details
     nrc = result["extraction"]["fields"]["nrc_number"]["value"]
@@ -221,7 +205,7 @@ def create_case(c, data: bytes, filename: str, tpin: str | None, actor: str, tok
             result["flags"].insert(0, F._flag("DUPLICATE_NRC", "high", "NRC number seen with different details",
                                               f"NRC {nrc} was already presented as {others[0]['full_name']} "
                                               f"(case {others[0]['ref']}).", "nrc_number"))
-            result["risk"] = F.risk(result["flags"], result["verification"], result["tamper"])
+            result["risk"] = F.risk(result["flags"], result["verification"])
     ref = ref or f"SC-{uuid.uuid4().hex[:8].upper()}"
     img_path = IMAGES / f"{ref}.png"
     img_path.write_bytes(encode_png(disp))
@@ -318,16 +302,6 @@ def taxpayers(q: str | None = None, user=Depends(current_user)):
         return [dict(r) for r in rows]
 
 
-@app.get("/api/evaluation")
-def evaluation(user=Depends(current_user)):
-    out = {}
-    for name in ("evaluation.json", "tamper_metrics.json"):
-        p = MODELS_DIR / name
-        if p.exists():
-            d = json.loads(p.read_text())
-            d.pop("oof_scores", None)
-            out[name.replace(".json", "")] = d
-    return out
 
 
 @app.get("/api/audit")

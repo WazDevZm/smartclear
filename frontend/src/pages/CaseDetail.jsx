@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
-  AlertOctagon, AlertTriangle, ArrowLeft, Check, Clock, Eye, EyeOff, Fingerprint, Info, MessageSquare, Send,
+  AlertOctagon, AlertTriangle, ArrowLeft, Check, Clock, Eye, EyeOff, Info, MessageSquare, Send,
   ShieldAlert, X,
 } from 'lucide-react'
 import { api, imageUrl } from '../api'
@@ -25,8 +25,7 @@ function DocViewer({ c, active, setActive, overlay }) {
   const flagged = new Set(r.flags.map((f) => f.field))
   const ver = r.verification.checks || {}
   const color = (k) => {
-    const t = r.tamper[k]?.probability
-    if ((t ?? 0) >= 0.5 || ver[k]?.outcome === 'mismatch' || (flagged.has(k) && k !== 'registration_date')) return '#fb7185'
+    if (ver[k]?.outcome === 'mismatch' || (flagged.has(k) && k !== 'registration_date')) return '#fb7185'
     if (ver[k]?.outcome === 'partial') return '#fbbf24'
     if (ver[k]?.outcome === 'match') return '#34d399'
     return '#38bdf8'
@@ -214,25 +213,7 @@ export default function CaseDetail() {
                   </div>
                 )
               })}
-              {!r.flags.length && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-3.5 text-sm text-emerald-200">No anomalies detected by rules or the tamper model.</div>}
-            </div>
-          </div>
-
-          <div className="card p-5">
-            <div className="mb-4 flex items-center gap-2 font-semibold text-white"><Fingerprint size={16} className="text-clear-400" /> Tamper analysis</div>
-            <div className="space-y-4">
-              {['nrc_number', 'full_name', 'date_of_birth'].map((k) => {
-                const t = r.tamper[k]
-                const p = t?.probability ?? 0
-                const col = p >= 0.75 ? 'from-rose-500 to-rose-400' : p >= 0.5 ? 'from-amber-500 to-amber-300' : 'from-emerald-500 to-clear-400'
-                return (
-                  <div key={k} onMouseEnter={() => setActive(k)} onMouseLeave={() => setActive(null)}>
-                    <div className="flex justify-between text-xs"><span className="text-slate-400">{FIELD_LABELS[k]}</span><span className="font-mono text-slate-300">{pct(t?.probability, 0)}</span></div>
-                    <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/5"><div className={`h-full rounded-full bg-gradient-to-r ${col}`} style={{ width: `${Math.max(2, p * 100)}%` }} /></div>
-                    {t?.reasons?.length > 0 && <div className="mt-1.5 text-[11px] text-slate-500">{t.reasons.join(' · ')}</div>}
-                  </div>
-                )
-              })}
+              {!r.flags.length && <div className="rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-3.5 text-sm text-emerald-200">No anomalies detected by the rule checks.</div>}
             </div>
           </div>
 

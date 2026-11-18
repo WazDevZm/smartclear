@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NRC corner labeller</title>
+<style>
+  :root { --bg:#f5f5f2; --ink:#1d1d1b; --muted:#6b6b66; --accent:#1a7f64; --warn:#b24a2a; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg:#171816; --ink:#eaeae6; --muted:#9a9a93; --accent:#3fc29c; --warn:#e07a57; }
+  }
+  :root[data-theme="dark"] { --bg:#171816; --ink:#eaeae6; --muted:#9a9a93; --accent:#3fc29c; --warn:#e07a57; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 system-ui, sans-serif; }
+  header { padding:12px 16px; border-bottom:1px solid #8884; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0 12px 0 0; }
+  button, input[type=file] { font:inherit; }
+  button { padding:6px 10px; border:1px solid #8886; background:transparent; color:var(--ink); border-radius:6px; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:transparent; }
+  button:disabled { opacity:.45; cursor:default; }
+  main { display:grid; grid-template-columns: minmax(0,1fr) 300px; gap:16px; padding:16px; }
+  #stage { border:1px solid #8884; border-radius:8px; overflow:auto; max-height:80vh; }
+  canvas { display:block; cursor:crosshair; }
+  aside { display:flex; flex-direction:column; gap:10px; }
+  .card { border:1px solid #8884; border-radius:8px; padding:10px; }
+  .muted { color:var(--muted); }
+  .warn { color:var(--warn); }
+  .ok { color:var(--accent); }
+  #log { font-family: ui-monospace, monospace; font-size:12px; white-space:pre-wrap; max-height:200px; overflow:auto; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>NRC corner labeller</h1>
+  <input id="files" type="file" accept="image/png,image/jpeg" multiple>
+  <button id="prev">&larr; Prev</button>
+  <span id="pos" class="muted">no pages loaded</span>
+  <button id="next">Next &rarr;</button>
+  <span style="flex:1"></span>
+  <button id="export" class="primary">Download corners.json</button>
+  <button id="import">Load saved JSON</button>
+  <input id="importFile" type="file" accept="application/json" hidden>
+</header>
+<main>
+  <div id="stage"><canvas id="cv"></canvas></div>
+  <aside>
+    <div class="card">
+      <strong>How to label</strong>
+      <ol style="margin:6px 0 0 18px; padding:0">
+        <li>Click the four corners of a card, in any order. The tool sorts them.</li>
+        <li>Each page can hold up to two cards (front and back). Use <em>Start another card</em>.</li>
+        <li>If you misclick, press <em>Undo point</em> or <em>Clear card</em>.</li>
+        <li>If there is no card on the page, press <em>No card here</em>.</li>
+      </ol>
+    </div>
+    <div class="card">
+      <div id="status" class="muted">Load page images to begin.</div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px">
+        <button id="undo" disabled>Undo point</button>
+        <button id="clear" disabled>Clear card</button>
+        <button id="newcard" disabled>Start another card</button>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px">
+        <button id="save" class="primary" disabled>Save page</button>
+        <button id="none" disabled>No card here</button>
+      </div>
+    </div>
+    <div class="card">
+      <strong>Saved so far</strong>
+      <div id="count" class="muted" style="margin-top:4px">0 pages labelled</div>
+      <div id="log" class="muted"></div>
+    </div>
+    <div class="card muted" style="font-size:12px">
+      Everything runs in this browser tab. Nothing is uploaded. Progress is kept in this browser,
+      and the JSON file you download is the only copy to keep. Store it with the scans, not in git.
+    </div>
+  </aside>
+</main>
+<script>
+(() => {
+  const STORE = "nrc-corner-labels-v1";
+  const cv = document.getElementById("cv");
+  const ctx = cv.getContext("2d");
+  const $ = (id) => document.getElementById(id);
+
+  let pages = [];          // {name, img, w, h}
+  let idx = -1;
+  let labels = {};         // name -> {w,h,cards:[[[x,y]x4]...] | none:true}
+  let current = [];        // points of the card being drawn, in image pixels
+  let cards = [];          // finished cards for the current page
+  let scale = 1;
+
+  function loadStore() {
+    try { labels = JSON.parse(localStorage.getItem(STORE) || "{}"); } catch { labels = {}; }
+  }
+  function saveStore() {
+    try { localStorage.setItem(STORE, JSON.stringify(labels)); } catch {}
+  }
+
+  // Order four points as top-left, top-right, bottom-right, bottom-left.
+  function orderQuad(pts) {
+    const s = pts.map(p => p[0] + p[1]), d = pts.map(p => p[0] - p[1]);
+    const tl = pts[s.indexOf(Math.min(...s))], br = pts[s.indexOf(Math.max(...s))];
+    const tr = pts[d.indexOf(Math.max(...d))], bl = pts[d.indexOf(Math.min(...d))];
+    return [tl, tr, br, bl];
+  }
+
+  function draw() {
+    if (!pages.length || idx < 0) return;
+    const p = pages[idx];
+    cv.width = Math.round(p.w * scale); cv.height = Math.round(p.h * scale);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.drawImage(p.img, 0, 0, cv.width, cv.height);
+    const poly = (pts, color, fill) => {
+      if (!pts.length) return;
+      ctx.beginPath();
+      pts.forEach((q, i) => { const x = q[0] * scale, y = q[1] * scale; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+      if (pts.length === 4) ctx.closePath();
+      ctx.lineWidth = 2; ctx.strokeStyle = color; ctx.stroke();
+      if (fill && pts.length === 4) { ctx.fillStyle = fill; ctx.fill(); }
+      pts.forEach(q => { ctx.beginPath(); ctx.arc(q[0] * scale, q[1] * scale, 4, 0, 6.3); ctx.fillStyle = color; ctx.fill(); });
+    };
+    cards.forEach((c, i) => poly(c, ["#1a7f64", "#2a6fd6"][i % 2], "rgba(26,127,100,.12)"));
+    poly(current, "#e07a57");
+    updateUI();
+  }
+
+  function updateUI() {
+    const p = pages[idx];
+    $("pos").textContent = p ? `${idx + 1} / ${pages.length}  ${p.name}` : "no pages loaded";
+    $("prev").disabled = idx <= 0; $("next").disabled = idx < 0 || idx >= pages.length - 1;
+    const hasPts = current.length > 0;
+    $("undo").disabled = !hasPts; $("clear").disabled = !hasPts && !cards.length;
+    $("newcard").disabled = current.length !== 4 || cards.length >= 2;
+    $("save").disabled = !pages.length || (current.length !== 0 && current.length !== 4) ||
+                         (cards.length === 0 && current.length !== 4);
+    $("none").disabled = !pages.length || cards.length > 0 || current.length > 0;
+    const st = labels[p ? p.name : ""];
+    let msg = "";
+    if (p) {
+      if (st && st.none) msg = "Saved: no card on this page.";
+      else if (st) msg = `Saved: ${st.cards.length} card(s).`;
+      else msg = "Not saved yet.";
+      msg += current.length ? ` Placing point ${current.length}/4.` : "";
+    }
+    $("status").textContent = msg;
+    $("status").className = st ? "ok" : "muted";
+    $("count").textContent = `${Object.keys(labels).length} of ${pages.length} pages labelled`;
+    const names = Object.keys(labels).slice(-6).map(n => `${labels[n].none ? "none" : labels[n].cards.length + " card(s)"}  ${n}`);
+    $("log").textContent = names.join("\n");
+  }
+
+  function showPage(i) {
+    idx = i;
+    const p = pages[idx];
+    const st = labels[p.name];
+    cards = st && st.cards ? st.cards.map(c => c.map(q => q.slice())) : [];
+    current = [];
+    fit();
+    draw();
+  }
+
+  function fit() {
+    const avail = Math.min(window.innerWidth - 380, 1100);
+    const p = pages[idx];
+    scale = Math.min(1, avail / p.w);
+  }
+
+  function pointFromEvent(e) {
+    const r = cv.getBoundingClientRect();
+    const x = (e.clientX - r.left) / scale, y = (e.clientY - r.top) / scale;
+    return [Math.round(x), Math.round(y)];
+  }
+
+  cv.addEventListener("click", (e) => {
+    if (idx < 0) return;
+    if (current.length >= 4) return;
+    current.push(pointFromEvent(e));
+    if (current.length === 4) {
+      current = orderQuad(current);
+    }
+    draw();
+  });
+
+  $("undo").onclick = () => { current.pop(); draw(); };
+  $("clear").onclick = () => {
+    if (current.length) current = [];
+    else cards.pop();
+    draw();
+  };
+  $("newcard").onclick = () => {
+    if (current.length !== 4 || cards.length >= 2) return;
+    cards.push(current); current = []; draw();
+  };
+  $("save").onclick = () => {
+    if (current.length === 4) { cards.push(current); current = []; }
+    if (!cards.length) return;
+    const p = pages[idx];
+    labels[p.name] = { w: p.w, h: p.h, cards: cards.map(c => c.map(q => q.slice())) };
+    saveStore(); draw();
+  };
+  $("none").onclick = () => {
+    const p = pages[idx];
+    labels[p.name] = { w: p.w, h: p.h, none: true };
+    cards = []; current = [];
+    saveStore(); draw();
+  };
+  $("prev").onclick = () => { if (idx > 0) showPage(idx - 1); };
+  $("next").onclick = () => { if (idx < pages.length - 1) showPage(idx + 1); };
+
+  $("files").addEventListener("change", (e) => {
+    const files = Array.from(e.target.files).sort((a, b) => a.name.localeCompare(b.name));
+    pages = [];
+    let pending = files.length;
+    files.forEach((f) => {
+      const img = new Image();
+      img.onload = () => {
+        pages.push({ name: f.name, img, w: img.naturalWidth, h: img.naturalHeight });
+        if (--pending === 0) {
+          pages.sort((a, b) => a.name.localeCompare(b.name));
+          const first = pages.findIndex(p => !labels[p.name]);
+          showPage(first >= 0 ? first : 0);
+        }
+      };
+      img.src = URL.createObjectURL(f);
+    });
+  });
+
+  $("export").onclick = () => {
+    const blob = new Blob([JSON.stringify({ version: 1, labels }, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "corners.json"; a.click();
+  };
+  $("import").onclick = () => $("importFile").click();
+  $("importFile").addEventListener("change", async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      labels = data.labels || {};
+      saveStore();
+      if (idx >= 0) showPage(idx); else updateUI();
+    } catch (err) { alert("Could not read that file: " + err.message); }
+  });
+
+  window.addEventListener("resize", () => { if (idx >= 0) { fit(); draw(); } });
+  loadStore();
+  updateUI();
+})();
+</script>
+</body>
+</html>

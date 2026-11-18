@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRight, BadgeCheck, Eye, FileScan, Fingerprint, GitCompareArrows, Lock, ScanLine, ShieldAlert,
@@ -11,7 +10,7 @@ function HeroCard() {
     ['NRC No.', '783849/52/1', 'match'],
     ['Full name', 'PRECIOUS MWEEMBA CHISENGA', 'match'],
     ['Date of birth', '08.04.2006', 'match'],
-    ['District', 'KABWE ≠ MONZE (code 52)', 'flag'],
+    ['District', 'KABWE', 'match'],
   ]
   return (
     <div className="relative mx-auto w-full max-w-[520px] animate-float">
@@ -21,8 +20,8 @@ function HeroCard() {
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
             <ScanLine size={14} className="text-clear-400" /> SC-0101 · nrc-syn-0101.pdf
           </div>
-          <span className="rounded-full bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 ring-1 ring-rose-400/25">
-            High risk · 70
+          <span className="rounded-full bg-white/[0.05] px-2.5 py-1 text-[11px] font-semibold text-slate-300 ring-1 ring-white/10">
+            Text read · for officer check
           </span>
         </div>
         {/* stylised NRC */}
@@ -41,7 +40,7 @@ function HeroCard() {
             <div className="text-right"><span className="block text-[7px] font-sans font-bold text-[#777]">SEX</span>F</div>
             <div className="col-span-2"><span className="block text-[7px] font-sans font-bold text-[#777]">VILLAGE</span>NANSANGA</div>
             <div className="text-right"><span className="block text-[7px] font-sans font-bold text-[#777]">DISTRICT</span>
-              <span className="rounded bg-rose-500/20 px-1 ring-1 ring-rose-600/50">KABWE</span></div>
+              <span className="rounded bg-emerald-500/20 px-1 ring-1 ring-emerald-600/40">KABWE</span></div>
           </div>
           <div className="pointer-events-none absolute inset-x-0 top-0 h-full">
             <div className="h-16 w-full animate-scan bg-gradient-to-b from-transparent via-cyan-400/30 to-transparent" />
@@ -65,23 +64,20 @@ function HeroCard() {
 
 const steps = [
   { Icon: FileScan, t: 'Scanned NRC', d: 'Officer uploads the PDF or image presented at registration.' },
-  { Icon: Sparkles, t: 'AI/OCR extraction', d: 'Deep-learning OCR reads NRC number, name and date of birth in about a second, with confidence for every field.' },
-  { Icon: GitCompareArrows, t: 'Record verification', d: 'Exact match on NRC and DOB, smart name matching that tolerates order, case and a missing middle name.' },
-  { Icon: ShieldAlert, t: 'Anomaly & fraud flags', d: 'Explainable rules plus a trained tamper detector catch altered digits, swapped fonts and erasures.' },
+  { Icon: Sparkles, t: 'Text reading (OCR)', d: 'A text recognizer reads the NRC number, name, date of birth and other fields from the card.' },
+  { Icon: GitCompareArrows, t: 'Record comparison', d: 'Compares the text read from the card with the captured taxpayer record, for the officer to review.' },
+  { Icon: ShieldAlert, t: 'Mismatch notes', d: 'Lists the fields that differ from the record. These are notes for review, not findings of fraud.' },
   { Icon: UserCheck, t: 'Officer decision', d: 'Evidence on one screen. The officer approves, rejects or escalates, and every action is audited.' },
 ]
 
 const features = [
-  { Icon: Fingerprint, t: 'Field-level tamper detection', d: 'A model trained on synthetic forgeries spots correction patches, spliced digits, substituted surnames and blurred fields. It shows the reason, not just a score.' },
-  { Icon: Eye, t: 'Explainable by design', d: 'Every flag says what was found and where: the NRC district code that doesn’t match, the age at registration, the character in a different ink.' },
-  { Icon: Lock, t: 'Privacy-first', d: 'Developed entirely on synthetic NRCs. It runs on-premise in ZRA’s sandbox, with no cloud OCR and no data leaving the network.' },
-  { Icon: Zap, t: 'Built for the counter', d: 'About a second per document on a laptop CPU. A risk-sorted queue puts the cases that matter first.' },
+  { Icon: Fingerprint, t: 'Field-by-field output', d: 'Each field is shown as read from the card, so the officer can compare it with the original document.' },
+  { Icon: Eye, t: 'Officer decides', d: 'The system presents the text and comparisons. The officer decides, and every action is recorded.' },
+  { Icon: Lock, t: 'Privacy-first', d: 'Developed using synthetic NRCs. It runs locally, with no cloud OCR and no data leaving the network.' },
+  { Icon: Zap, t: 'Built for the counter', d: 'About 4 seconds per card on a laptop CPU, measured on synthetic cards.' },
 ]
 
 export default function Landing() {
-  const [m, setM] = useState(null)
-  useEffect(() => { fetch('/api/public/metrics').then((r) => r.json()).then(setM).catch(() => {}) }, [])
-  const pct = (v) => (v === undefined ? '—' : `${Math.round(v * 1000) / 10}%`)
   return (
     <div className="relative min-h-screen overflow-hidden bg-ink-950">
       <div className="grid-bg pointer-events-none absolute inset-0" />
@@ -106,18 +102,16 @@ export default function Landing() {
             Verify every NRC<br /><span className="grad-text">in seconds, not minutes.</span>
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-400">
-            SmartClear reads scanned National Registration Cards, checks them against captured taxpayer records,
-            and flags altered or inconsistent documents so registration officers can act at the counter.
+            SmartClear reads the text on scanned National Registration Cards and presents it to a registration
+            officer for checking. Accuracy on real cards has not been measured yet.
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-3">
             <Link to="/login" className="btn-primary px-6 py-3 text-[15px]">Open the officer console <ArrowRight size={16} /></Link>
             <a href="#how" className="btn-ghost px-6 py-3 text-[15px]">See how it works</a>
           </div>
-          <div className="mt-12 grid max-w-lg grid-cols-3 gap-6 border-t border-white/[0.07] pt-8">
-            <div><div className="font-display text-3xl font-bold text-white">{pct(m?.extraction_accuracy)}</div><div className="mt-1 text-xs text-slate-500">key-field extraction</div></div>
-            <div><div className="font-display text-3xl font-bold text-white">{pct(m?.fraud_recall)}</div><div className="mt-1 text-xs text-slate-500">fraud cases flagged</div></div>
-            <div><div className="font-display text-3xl font-bold text-white">~{m?.median_seconds ?? '1'}s</div><div className="mt-1 text-xs text-slate-500">per document</div></div>
-          </div>
+          <p className="mt-12 max-w-lg border-t border-white/[0.07] pt-8 text-xs leading-relaxed text-slate-500">
+            This is a prototype. Its accuracy has been measured only on synthetic NRC cards. See the Results section below.
+          </p>
         </div>
         <HeroCard />
       </section>
@@ -170,20 +164,15 @@ export default function Landing() {
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="card relative overflow-hidden p-8 sm:p-12">
             <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-clear-400/10 blur-3xl" />
-            <div className="label text-clear-400">Pilot results · synthetic NRC set ({m?.documents ?? 100} documents)</div>
-            <div className="mt-8 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-              {[['Extraction accuracy', pct(m?.extraction_accuracy), 'NRC no., name, DOB vs manual reading'],
-                ['Verification accuracy', pct(m?.verification_accuracy), 'match / review / mismatch vs expected'],
-                ['Fraud recall', pct(m?.fraud_recall), 'labelled fraudulent NRCs flagged'],
-                ['Flag precision', pct(m?.fraud_precision), 'flags that were real issues']].map(([a, b, c]) => (
-                <div key={a}>
-                  <div className="font-display text-4xl font-bold text-white">{b}</div>
-                  <div className="mt-2 text-sm font-medium text-slate-300">{a}</div>
-                  <div className="mt-1 text-xs text-slate-500">{c}</div>
-                </div>
-              ))}
-            </div>
-            <p className="mt-8 max-w-3xl text-xs leading-relaxed text-slate-500">Measured on synthetic specimens. The tamper model is scored with document-grouped cross-validation, so no card is scored by a model that trained on it. Baselines against ZRA’s manual process will be established with real documents inside ZRA’s controlled sandbox.</p>
+            <div className="label text-clear-400">Results</div>
+            <p className="mt-6 max-w-3xl text-lg leading-relaxed text-slate-300">
+              No results on real NRC cards yet. The figures we have are from 100 synthetic cards, which are generated
+              specimens and not real documents, so they do not show how the system performs in practice.
+            </p>
+            <p className="mt-6 max-w-3xl text-xs leading-relaxed text-slate-500">
+              Measuring real-card accuracy needs labelled real cards, which have not been provided yet. The full
+              measurements, charts and method are in the project README.
+            </p>
           </div>
         </div>
       </section>

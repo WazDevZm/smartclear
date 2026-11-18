@@ -6,7 +6,7 @@ import { PageHeader } from '../components/ui'
 
 const stages = [
   [ScanLine, 'Reading document'], [Sparkles, 'Extracting fields with AI/OCR'],
-  [GitCompareArrows, 'Verifying against captured record'], [ShieldAlert, 'Running anomaly & tamper checks'],
+  [GitCompareArrows, 'Verifying against captured record'], [ShieldAlert, 'Running anomaly checks'],
 ]
 
 export default function Upload() {

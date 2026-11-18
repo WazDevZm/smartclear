@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SmartClear — one-command local setup and launch.
 #   ./run.sh            set up (first time) and start on http://localhost:8000
-#   ./run.sh --retrain  also rebuild the OCR cache, retrain the tamper model and re-evaluate
+#   ./run.sh --retrain  also rebuild the OCR cache and reseed the synthetic set
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -20,18 +20,10 @@ if [ ! -d frontend/dist ]; then
   (cd frontend && npm install --no-audit --no-fund && npm run build)
 fi
 
-if [ "${1:-}" = "--retrain" ] || [ ! -f models/tamper_model.joblib ]; then
-  echo "▸ Extracting synthetic NRCs (OCR cache)"
-  .venv/bin/python backend/scripts/build_cache.py
-  echo "▸ Training tamper model"
-  .venv/bin/python backend/scripts/train_tamper.py
-fi
-
 if [ ! -f storage/smartclear.db ] || [ "${1:-}" = "--retrain" ]; then
   echo "▸ Seeding taxpayer records and processing the synthetic set"
   .venv/bin/python backend/scripts/build_cache.py >/dev/null
   .venv/bin/python backend/scripts/seed.py
-  .venv/bin/python backend/scripts/evaluate.py
 fi
 
 echo "▸ SmartClear running at http://localhost:8000  (login: officer / smartclear)"

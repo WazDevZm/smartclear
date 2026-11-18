@@ -11,7 +11,9 @@ FRONTEND_DIST = ROOT / "frontend" / "dist"
 # Source synthetic dataset supplied with the challenge (sibling folder of the project)
 SYNTHETIC_PDF_DIR = DATA_DIR / "synthetic_nrc"
 
-TAMPER_MODEL_PATH = MODELS_DIR / "tamper_model.joblib"
+# Fine-tuned PP-OCRv4 English text recognizer (ocr_training/), used for the text-reading step.
+OCR_REC_MODEL_PATH = MODELS_DIR / "ocr" / "nrc_rec.onnx"
+OCR_REC_KEYS_PATH = MODELS_DIR / "ocr" / "nrc_rec_keys.txt"
 REFERENCE_PATH = MODELS_DIR / "reference.json"   # district-code table learned from genuine specimens
 
 # Verification thresholds
@@ -19,7 +21,6 @@ NAME_MATCH_THRESHOLD = 90      # token-sort similarity (0-100) to count as a nam
 NAME_REVIEW_THRESHOLD = 75     # between review and match -> "partial" (officer decides)
 
 # Fraud / risk thresholds
-TAMPER_FIELD_THRESHOLD = 0.5   # per-field tamper probability that raises a flag
 MIN_REGISTRATION_AGE = 16      # NRCs are issued from age 16 in Zambia
 OCR_LOW_CONFIDENCE = 0.80
 

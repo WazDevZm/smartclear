@@ -113,7 +113,6 @@ def process(image: np.ndarray, record: dict | None = None, tokens: list | None =
     """Run the full pipeline. Returns (result dict, deskewed image for display)."""
     t0 = time.time()
     cache_key = None
-    cached_tamper = None
     if tokens:
         toks = [Token(t, c, np.array(q)) for q, t, c in tokens]
         page_info = {"scaled": False, "scale": 1.0, "cards": []}
@@ -126,7 +125,6 @@ def process(image: np.ndarray, record: dict | None = None, tokens: list | None =
         if cached_payload is not None:
             ex = _restore_cached(cached_payload, cached_disp)
             page_info = cached_payload.get("page", page_info)
-            cached_tamper = cached_payload.get("tamper")
             disp = cached_disp
         else:
             ex = _process_split(image, page_info, record) if len(page_info["cards"]) >= 2 else None
@@ -143,31 +141,29 @@ def process(image: np.ndarray, record: dict | None = None, tokens: list | None =
 
     verification = verify(fields, record)
     t_ver = time.time()
-    scores = cached_tamper if cached_tamper is not None else F.tamper_scores(ex.deskewed, ex.forensic_boxes)
-    flags = F.rule_flags(fields, conf) + F.model_flags(scores)
+    flags = F.rule_flags(fields, conf)
     if verification["overall"] == "mismatch":
         bad = [k for k, c in verification["checks"].items() if c["outcome"] == "mismatch"]
         flags.append(F._flag("RECORD_MISMATCH", "high", "Doesn't match captured record",
                              "Mismatch on: " + ", ".join(F.FIELD_LABEL[b] for b in bad) + ".", bad[0] if bad else None))
     order = {"high": 0, "medium": 1, "low": 2}
     flags.sort(key=lambda f: order[f["severity"]])
-    rk = F.risk(flags, verification, scores)
+    rk = F.risk(flags, verification)
     t_end = time.time()
 
     ext = ex.to_dict()
     for k, f in ext["fields"].items():
         f["bbox"] = _to_deskewed(f["bbox"], ex.deskew_matrix)
-    if cache_key and cached_tamper is None:
+    if cache_key:
         payload = {"fields": ext["fields"], "forensic_boxes": ex.forensic_boxes,
                    "skew_deg": ex.skew_deg, "anchored": ex.anchored,
-                   "warnings": ex.warnings, "tamper": scores, "page": page_info}
+                   "warnings": ex.warnings, "page": page_info}
         _cache.store(cache_key, payload, disp)
     disp = ex.deskewed if ex.deskewed is not None else image
     result = {
         "extraction": ext,
         "forensic_boxes": ex.forensic_boxes,
         "verification": verification,
-        "tamper": {k: {"probability": v["probability"], "reasons": v["reasons"]} for k, v in scores.items()},
         "flags": flags,
         "risk": rk,
         "image_size": [int(disp.shape[1]), int(disp.shape[0])],

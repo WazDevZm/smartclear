@@ -303,8 +303,10 @@ def _read_zone(img: np.ndarray, M: np.ndarray, x0, y0, x1, y1, scale: float = 2.
 @lru_cache(maxsize=1)
 def get_engine():
     from rapidocr_onnxruntime import RapidOCR
+    from .config import OCR_REC_KEYS_PATH, OCR_REC_MODEL_PATH
 
-    return RapidOCR()
+    # Text detection stays on the stock PP-OCR detector; recognition uses the fine-tuned model.
+    return RapidOCR(rec_model_path=str(OCR_REC_MODEL_PATH), rec_keys_path=str(OCR_REC_KEYS_PATH))
 
 
 @dataclass
@@ -487,8 +489,6 @@ def extract(image: np.ndarray, tokens: list[Token] | None = None,
     if legacy:
         ex.warnings.append("Different card layout detected (taller-print issue); "
                            "field zones were auto-adjusted — check values against the image.")
-        ex.warnings.append("Tamper model was trained on synthetic specimens only; "
-                           "treat tamper scores as indicative, not conclusive.")
 
     def _clip(b):
         return [max(0, int(b[0])), max(0, int(b[1])), min(W_, int(b[2])), min(H_, int(b[3]))]

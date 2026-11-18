@@ -1,4 +1,4 @@
-"""Anomaly / fraud flagging: explainable rules + the trained tamper model.
+"""Rule-based flags and risk score.
 
 A flag means "an officer should look at this" — never an automated fraud determination.
 Each flag carries a code, severity, plain-language message and the evidence behind it.
@@ -10,24 +10,13 @@ import re
 from datetime import date
 from functools import lru_cache
 
-import joblib
-import numpy as np
-
-from .config import (MIN_REGISTRATION_AGE, OCR_LOW_CONFIDENCE, REFERENCE_PATH, TAMPER_FIELD_THRESHOLD,
-                     TAMPER_MODEL_PATH)
-from .forensics import FEATURE_LABELS, FIELDS, compute_features, crop_box, vectorize
+from .config import MIN_REGISTRATION_AGE, OCR_LOW_CONFIDENCE, REFERENCE_PATH
 from .gazetteer import DISTRICT_PROVINCE
 from .verify import parse_date
 
 SEVERITY_WEIGHT = {"high": 70, "medium": 40, "low": 15}
+FIELDS = ("nrc_number", "full_name", "date_of_birth")
 FIELD_LABEL = {"nrc_number": "NRC number", "full_name": "Full name", "date_of_birth": "Date of birth"}
-
-
-@lru_cache(maxsize=1)
-def tamper_model():
-    if not TAMPER_MODEL_PATH.exists():
-        return None
-    return joblib.load(TAMPER_MODEL_PATH)
 
 
 @lru_cache(maxsize=1)
@@ -40,39 +29,6 @@ def reference() -> dict:
 def _flag(code, severity, title, message, field=None, evidence=None):
     return {"code": code, "severity": severity, "title": title, "message": message, "field": field,
             "evidence": evidence or {}}
-
-
-def explain(feats: dict, model_pack: dict, top=3) -> list[str]:
-    med, iqr = model_pack["medians"], model_pack["iqr"]
-    scored = []
-    for k, label in FEATURE_LABELS.items():
-        z = (feats[k] - med[k]) / (abs(iqr[k]) + 1e-6)
-        if k in ("ocr_conf", "sharpness", "edge_energy"):
-            z = -z          # low values are the suspicious direction
-        scored.append((z, label))
-    seen, out = set(), []
-    for z, label in sorted(scored, reverse=True):
-        if z > 1.5 and label not in seen:
-            seen.add(label)
-            out.append(label)
-        if len(out) >= top:
-            break
-    return out
-
-
-def tamper_scores(deskewed: np.ndarray, boxes: dict) -> dict:
-    pack = tamper_model()
-    out = {}
-    for f in FIELDS:
-        box = boxes.get(f)
-        if pack is None or box is None or deskewed is None:
-            out[f] = {"probability": None, "reasons": []}
-            continue
-        feats = compute_features(crop_box(deskewed, box), f)
-        p = float(pack["model"].predict_proba(vectorize(feats)[None, :])[0, 1])
-        out[f] = {"probability": round(p, 4), "reasons": explain(feats, pack) if p >= 0.3 else [],
-                  "features": {k: round(float(v), 4) for k, v in feats.items()}}
-    return out
 
 
 def rule_flags(fields: dict, conf: dict, today: date | None = None) -> list[dict]:
@@ -144,25 +100,10 @@ def rule_flags(fields: dict, conf: dict, today: date | None = None) -> list[dict
     return flags
 
 
-def model_flags(scores: dict) -> list[dict]:
-    flags = []
-    for f, s in scores.items():
-        p = s.get("probability")
-        if p is not None and p >= TAMPER_FIELD_THRESHOLD:
-            sev = "high" if p >= 0.75 else "medium"
-            why = "; ".join(s["reasons"]) or "Image characteristics differ from genuine typed fields."
-            flags.append(_flag("TAMPER_SUSPECTED", sev, f"{FIELD_LABEL[f]} may be altered",
-                               f"Tamper model score {p:.0%}. {why}.", f, {"probability": p, "reasons": s["reasons"]}))
-    return flags
-
-
-def risk(flags: list[dict], verification: dict, scores: dict) -> dict:
+def risk(flags: list[dict], verification: dict) -> dict:
     score = 0.0
     for fl in flags:
         score = max(score, SEVERITY_WEIGHT[fl["severity"]] + 5 * (sum(1 for x in flags if x["severity"] == "high") - 1))
-    for s in scores.values():
-        if s.get("probability") is not None:
-            score = max(score, 100 * s["probability"] * 0.95)
     ov = verification.get("overall")
     if ov == "mismatch":
         score = max(score, 75)

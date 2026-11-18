@@ -8,8 +8,8 @@ import { api, imageUrl } from '../api'
 import { BandBadge, OutcomeIcon, Spinner, StatusBadge, outcomeText, pct } from '../components/ui'
 
 const FIELD_LABELS = {
-  nrc_number: 'NRC number', full_name: 'Full name', date_of_birth: 'Date of birth', card_number: 'Card no.', sex: 'Sex',
-  place_of_birth_village: 'Place of birth', place_of_birth_district: 'Birth district', parent_place_of_birth: "Parent's place of birth",
+  nrc_number: 'Registration number', full_name: 'Full name', date_of_birth: 'Date of birth', card_number: 'Card no.', sex: 'Sex',
+  place_of_birth_village: 'Place of birth',
   village: 'Village', district: 'District', chief: 'Chief', registration_date: 'Registration date', special_marks: 'Special marks',
 }
 const sevStyle = {
@@ -27,35 +27,58 @@ function DocViewer({ c, active, setActive, overlay }) {
   const color = (k) => {
     const t = r.tamper[k]?.probability
     if ((t ?? 0) >= 0.5 || ver[k]?.outcome === 'mismatch' || (flagged.has(k) && k !== 'registration_date')) return '#fb7185'
-    if (ver[k]?.outcome === 'partial') return '#fbbf24'
+    if (r.extraction.fields[k]?.status === 'needs_review' || ver[k]?.outcome === 'partial') return '#fbbf24'
     if (ver[k]?.outcome === 'match') return '#34d399'
     return '#38bdf8'
   }
-  const boxes = Object.entries(fields).filter(([, f]) => f.bbox)
-  // erased key fields have no OCR box: show the forensic region instead
-  for (const k of ['nrc_number', 'full_name', 'date_of_birth']) {
-    if (!fields[k]?.bbox && r.forensic_boxes?.[k]) boxes.push([k, { bbox: r.forensic_boxes[k], missing: true }])
-  }
-  // crop the view to the cards (scans carry wide page margins)
+  const pageUncropped = (field) => r.preprocessing?.page_cropped?.[field?.page_index ?? 0] === false
+  const uncertain = (field, key) => key !== 'special_marks' && (field?.status === 'needs_review' || field?.status === 'unreadable' || pageUncropped(field))
+  const boxes = Object.entries(fields).map(([key, field]) => {
+    const evidence = uncertain(field, key)
+      ? (r.extraction.crop_boxes?.[key] || r.forensic_boxes?.[key]) : null
+    if (evidence) return [key, { ...field, bbox: evidence, missing: !field?.bbox }]
+    return [key, field]
+  }).filter(([, field]) => field?.bbox)
   const xs = boxes.flatMap(([, f]) => [f.bbox[0], f.bbox[2]])
   const cx0 = Math.max(0, Math.min(...xs) - 45)
   const cx1 = Math.min(w, Math.max(...xs) + 45)
+  const viewBox = `${cx0} 0 ${cx1 - cx0} ${h}`
+  const focus = boxes.find(([key]) => key === active)
+  const focusBox = focus?.[1]?.bbox
+  const padX = focusBox ? Math.max(28, (focusBox[2] - focusBox[0]) * 0.45) : 0
+  const padY = focusBox ? Math.max(18, (focusBox[3] - focusBox[1]) * 0.8) : 0
+  const zoomX0 = focusBox ? Math.max(0, focusBox[0] - padX) : 0
+  const zoomY0 = focusBox ? Math.max(0, focusBox[1] - padY) : 0
+  const zoomX1 = focusBox ? Math.min(w, focusBox[2] + padX) : 0
+  const zoomY1 = focusBox ? Math.min(h, focusBox[3] + padY) : 0
   return (
-    <div className="overflow-hidden rounded-xl bg-[#e8e8e4]">
-      <svg viewBox={`${cx0} 0 ${cx1 - cx0} ${h}`} className="block w-full">
-        <image href={imageUrl(c.id)} x="0" y="0" width={w} height={h} />
-        {overlay && boxes.map(([k, f]) => {
-          const [x0, y0, x1, y1] = f.bbox
-          const col = f.missing ? '#fb7185' : color(k)
-          const on = active === k
-          return (
-            <rect key={k} onMouseEnter={() => setActive(k)} onMouseLeave={() => setActive(null)} className="cursor-pointer"
+    <div className="space-y-3">
+      <div className="overflow-hidden rounded-xl bg-[#e8e8e4]">
+        <svg viewBox={viewBox} className="block w-full">
+          <image href={imageUrl(c.id)} x="0" y="0" width={w} height={h} />
+          {overlay && boxes.map(([k, f]) => {
+            const [x0, y0, x1, y1] = f.bbox
+            const col = f.missing ? '#fb7185' : color(k)
+            const on = active === k
+            return <rect key={k} onMouseEnter={() => setActive(k)} onMouseLeave={() => setActive(null)}
               x={x0 - 3} y={y0 - 2} width={x1 - x0 + 6} height={y1 - y0 + 4} rx="3"
               fill={col} fillOpacity={on ? 0.28 : 0.1} stroke={col} strokeWidth={on ? 2 : 1.1}
               strokeDasharray={f.missing ? '4 3' : undefined} />
-          )
-        })}
-      </svg>
+          })}
+        </svg>
+      </div>
+      {focusBox && (
+        <div className="overflow-hidden rounded-lg border border-white/10 bg-[#e8e8e4]">
+          <div className="bg-slate-950 px-3 py-1.5 text-[11px] text-slate-300">
+            Evidence crop · {FIELD_LABELS[active] || active}
+          </div>
+          <svg viewBox={zoomX0 + ' ' + zoomY0 + ' ' + Math.max(1, zoomX1 - zoomX0) + ' ' + Math.max(1, zoomY1 - zoomY0)} className="block max-h-48 w-full">
+            <image href={imageUrl(c.id)} x="0" y="0" width={w} height={h} />
+            <rect x={focusBox[0]} y={focusBox[1]} width={focusBox[2] - focusBox[0]} height={focusBox[3] - focusBox[1]}
+              fill="#38bdf8" fillOpacity="0.08" stroke="#0284c7" strokeWidth="2" />
+          </svg>
+        </div>
+      )}
     </div>
   )
 }
@@ -97,7 +120,9 @@ export default function CaseDetail() {
   const [c, setC] = useState(null)
   const [active, setActive] = useState(null)
   const [overlay, setOverlay] = useState(true)
-  useEffect(() => { api(`/cases/${id}`).then(setC) }, [id])
+  useEffect(() => {
+    api(`/cases/${id}`).then(setC)
+  }, [id])
   if (!c) return <Spinner />
   const r = c.result
   const f = r.extraction.fields
@@ -128,6 +153,16 @@ export default function CaseDetail() {
         </div>
       </div>
 
+      {r.capture_quality?.retake_recommended && (
+        <div className="mb-6 rounded-2xl border border-amber-400/30 bg-amber-400/[0.06] p-4 text-sm text-amber-100">
+          <div className="font-semibold">Retake recommended</div>
+          <div className="mt-1 text-amber-200/80">Ask the card holder to submit a clearer image before relying on unreadable fields.</div>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-amber-200/80">
+            {r.capture_quality.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+          </ul>
+        </div>
+      )}
+
       <div className="grid gap-6 xl:grid-cols-[1.25fr_1fr]">
         <div className="space-y-6">
           <div className="card p-4">
@@ -144,7 +179,7 @@ export default function CaseDetail() {
             </div>
             {r.preprocessing && <div className="mt-2 px-1 text-[11px] text-slate-500">
               Pages: {r.preprocessing.pages?.map((page) =>
-                `${page.index + 1} ${page.side}${page.rotation_degrees ? ` rotated ${page.rotation_degrees}°` : ''}`
+                `Page ${(page.source_page_index ?? page.index) + 1}${page.card_index != null ? ` card ${page.card_index + 1}` : ''} ${page.side}${page.rotation_degrees ? ` rotated ${page.rotation_degrees}°` : ''}`
               ).join(' · ') || r.preprocessing.page_count}
               {r.preprocessing.cropped_page_count > 0 && ` · ${r.preprocessing.cropped_page_count} card crop${r.preprocessing.cropped_page_count === 1 ? '' : 's'}`}
               {' · grayscale OCR'}
@@ -155,18 +190,37 @@ export default function CaseDetail() {
           </div>
 
           <div className="card p-5">
-            <div className="label mb-3">All extracted fields</div>
+            <div className="label mb-3">NRC fields</div>
             <div className="grid gap-x-6 sm:grid-cols-2">
-              {Object.entries(FIELD_LABELS).map(([k, l]) => (
-                <div key={k} onMouseEnter={() => setActive(k)} onMouseLeave={() => setActive(null)}
-                  className={`flex items-center justify-between gap-3 rounded-lg px-2 py-2 transition ${hi(k)}`}>
-                  <span className="text-xs text-slate-500">{l}</span>
-                  <span className="flex items-center gap-2 text-right">
-                    <span className="font-mono text-xs text-slate-200">{f[k]?.value || <span className="text-slate-600">—</span>}</span>
-                    {f[k]?.value && <span className={`font-mono text-[10px] ${f[k].confidence < 0.8 ? 'text-amber-400' : 'text-slate-600'}`}>{Math.round(f[k].confidence * 100)}%</span>}
-                  </span>
-                </div>
-              ))}
+              {Object.entries(FIELD_LABELS).map(([k, l]) => {
+                const field = f[k]
+                const status = field?.status
+                const pageIndex = field?.page_index ?? 0
+                const boundaryUncertain = k !== 'special_marks' && r.preprocessing?.page_cropped?.[pageIndex] === false
+                const needsReview = boundaryUncertain || status === 'needs_review' || status === 'unreadable'
+                return (
+                  <div key={k} onMouseEnter={() => setActive(k)} onMouseLeave={() => setActive(null)}
+                    className={'flex items-center justify-between gap-3 rounded-lg px-2 py-2 transition ' + hi(k)}>
+                    <span className="text-xs text-slate-500">{l}</span>
+                    <span className="flex items-center gap-2 text-right">
+                      {needsReview && <span className="rounded bg-amber-400/10 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-amber-300">
+                        {status === 'unreadable' && !boundaryUncertain ? 'Unreadable' : 'Review'}
+                      </span>}
+                      <span className="text-right">
+                        <span className={'block font-mono text-xs ' + (needsReview ? 'text-amber-200' : 'text-slate-200')}>
+                          {field?.value || (status === 'needs_review' ? field?.raw || 'Check crop' : <span className="text-slate-600">—</span>)}
+                        </span>
+                        {field?.alternatives?.length > 0 && (
+                          <span className="mt-1 block text-[10px] text-amber-300">
+                            OCR reads: {field.alternatives.join(' / ')}
+                          </span>
+                        )}
+                      </span>
+                      {field?.value && <span className={'font-mono text-[10px] ' + (k === 'special_marks' ? 'text-slate-500' : field.confidence < 0.8 ? 'text-amber-400' : 'text-slate-600')}>{k === 'special_marks' ? 'Default' : `${Math.round(field.confidence * 100)}%`}</span>}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>

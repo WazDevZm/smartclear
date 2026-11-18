@@ -68,17 +68,20 @@ def _to_deskewed(bbox, M):
     return [int(pts[:, 0].min()), int(pts[:, 1].min()), int(pts[:, 0].max()), int(pts[:, 1].max())]
 
 
-def process(image: np.ndarray, record: dict | None = None, tokens: list | None = None) -> tuple[dict, np.ndarray]:
+def process(image: np.ndarray, record: dict | None = None, tokens: list | None = None,
+            force_crop: bool = False) -> tuple[dict, np.ndarray]:
     """Run the full pipeline. Returns (result dict, deskewed image for display)."""
     t0 = time.time()
-    if tokens and isinstance(tokens[0], Token):
+    if tokens is not None and isinstance(tokens, list) and not tokens:
+        toks = []
+    elif tokens and isinstance(tokens[0], Token):
         toks = tokens
     elif tokens:
         toks = [Token(t, c, np.array(q)) for q, t, c in tokens]
     else:
         toks = run_ocr(image)
     t_ocr = time.time()
-    ex = extract(image, toks)
+    ex = extract(image, toks, force_crop=force_crop)
     t_ext = time.time()
     fields = {k: f.value for k, f in ex.fields.items()}
     conf = {k: f.confidence for k, f in ex.fields.items()}
@@ -87,6 +90,16 @@ def process(image: np.ndarray, record: dict | None = None, tokens: list | None =
     t_ver = time.time()
     scores = F.tamper_scores(ex.deskewed, ex.forensic_boxes)
     flags = F.rule_flags(fields, conf) + F.model_flags(scores)
+    for name, field_result in ex.fields.items():
+        if field_result.status_reason in (
+            "Full-page OCR and field-crop OCR disagree.",
+            "Only one OCR pass produced a field reading.",
+        ):
+            flags.append(F._flag(
+                "OCR_CROP_DISAGREEMENT", "medium", f"{name.replace('_', ' ').title()} needs review",
+                "The full-page and field-crop reads differed or one pass found no text.", name,
+                {"candidates": field_result.alternatives},
+            ))
     if verification["overall"] == "mismatch":
         bad = [k for k, c in verification["checks"].items() if c["outcome"] == "mismatch"]
         flags.append(F._flag("RECORD_MISMATCH", "high", "Doesn't match captured record",
@@ -121,13 +134,40 @@ def process_pages(
     images: list[np.ndarray],
     record: dict | None = None,
     tokens: list | None = None,
+    force_crop: bool = False,
+    page_isolated: list[bool] | None = None,
+    page_sources: list[dict] | None = None,
 ) -> tuple[dict, np.ndarray, list[dict]]:
     """Extract each page independently and merge front/back-owned fields."""
     if not images:
         raise ValueError("At least one document page is required")
 
+    if page_isolated is None:
+        page_isolated = [True] * len(images)
+    if len(page_isolated) != len(images):
+        raise ValueError("Each document page needs a card-isolation status")
+    if page_sources is None:
+        page_sources = [{"source_page_index": i, "card_index": None} for i in range(len(images))]
+    if len(page_sources) != len(images):
+        raise ValueError("Each card crop needs its source page metadata")
+
     runs = []
-    for image in images:
+    for page_index, image in enumerate(images):
+        if not page_isolated[page_index]:
+            # Keep the uncropped page for evidence, but never submit page text to OCR.
+            blank = np.full_like(image, 255)
+            skipped, _ = process(blank, record, tokens=[], force_crop=False)
+            skipped["extraction"]["fields"]["special_marks"] = {
+                "value": "NIL", "confidence": 0.0, "bbox": None, "raw": "DEFAULT:NIL",
+                "status": "accepted", "status_reason": "Defaulted to NIL for the current workflow.",
+                "alternatives": [],
+            }
+            skipped["extraction"]["warnings"] = [
+                "Card edges were not confidently isolated; this page was not read."
+            ]
+            preview = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image.copy()
+            runs.append((skipped, preview, 0))
+            continue
         supplied = tokens if len(images) == 1 else None
         if supplied and isinstance(supplied[0], Token):
             page_tokens = supplied
@@ -137,7 +177,7 @@ def process_pages(
         else:
             page_tokens = None
         oriented, page_tokens, rotation = _orient_page(image, page_tokens)
-        result, preview = process(oriented, record, page_tokens)
+        result, preview = process(oriented, record, page_tokens, force_crop=force_crop)
         runs.append((result, preview, rotation))
 
     front_index = next((i for i, (result, _, _) in enumerate(runs)
@@ -162,20 +202,36 @@ def process_pages(
         h, w = preview.shape[:2]
         canvas[y:y + h, :w] = preview
     selected_for_field = {}
-    for name in runs[primary_index][0]["extraction"]["fields"]:
-        preferred = back_index if name == "nrc_number" else front_index
-        candidates = [preferred] if preferred is not None else []
-        candidates += [i for i in range(len(runs)) if i not in candidates]
-        source = next((i for i in candidates
-                       if runs[i][0]["extraction"]["fields"][name]["value"]), None)
-        if source is None:
-            source = preferred if preferred is not None else primary_index
-        selected_for_field[name] = source
+    field_names = runs[primary_index][0]["extraction"]["fields"]
+    for name in field_names:
+        if name == "nrc_number":
+            # NRC number is normally on the back, with front as a same-card fallback.
+            choices = [i for i in (back_index, front_index) if i is not None]
+            source = next((i for i in choices
+                           if runs[i][0]["extraction"]["fields"][name]["value"]), None)
+            selected_for_field[name] = source if source is not None else (choices[0] if choices else primary_index)
+        elif name == "special_marks":
+            # This field is a configured NIL default, not OCR from either side.
+            selected_for_field[name] = front_index if front_index is not None else primary_index
+        else:
+            # Front-side fields must never be borrowed from a back-side page.
+            selected_for_field[name] = front_index
 
     extraction = copy.deepcopy(runs[primary_index][0]["extraction"])
     forensic_boxes = {}
+    crop_boxes = {}
     tamper = {}
+    front_only_fields = set(field_names) - {"nrc_number", "special_marks"}
     for name, source in selected_for_field.items():
+        if source is None and name in front_only_fields:
+            extraction["fields"][name] = {
+                "value": None, "confidence": 0.0, "bbox": None, "raw": "",
+                "status": "unreadable",
+                "status_reason": "Front of the card was not detected; this field was left blank.",
+                "alternatives": [],
+            }
+            continue
+        source = primary_index if source is None else source
         source_result = runs[source][0]
         extraction["fields"][name] = copy.deepcopy(source_result["extraction"]["fields"][name])
         box = extraction["fields"][name]["bbox"]
@@ -187,6 +243,10 @@ def process_pages(
         if source_box:
             forensic_boxes[name] = [source_box[0], source_box[1] + offsets[source],
                                     source_box[2], source_box[3] + offsets[source]]
+        source_crop = source_result["extraction"].get("crop_boxes", {}).get(name)
+        if source_crop:
+            crop_boxes[name] = [source_crop[0], source_crop[1] + offsets[source],
+                                source_crop[2], source_crop[3] + offsets[source]]
         if name in source_result["tamper"]:
             tamper[name] = copy.deepcopy(source_result["tamper"][name])
 
@@ -194,6 +254,16 @@ def process_pages(
     confidence = {name: field["confidence"] for name, field in extraction["fields"].items()}
     verification = verify(merged_fields, record)
     flags = F.rule_flags(merged_fields, confidence) + F.model_flags(tamper)
+    for name, field_result in extraction["fields"].items():
+        if field_result.get("status_reason") in (
+            "Full-page OCR and field-crop OCR disagree.",
+            "Only one OCR pass produced a field reading.",
+        ):
+            flags.append(F._flag(
+                "OCR_CROP_DISAGREEMENT", "medium", f"{name.replace('_', ' ').title()} needs review",
+                "The full-page and field-crop reads differed or one pass found no text.", name,
+                {"candidates": field_result.get("alternatives", [])},
+            ))
     if verification["overall"] == "mismatch":
         bad = [name for name, check in verification["checks"].items() if check["outcome"] == "mismatch"]
         flags.append(F._flag("RECORD_MISMATCH", "high", "Doesn't match captured record",
@@ -207,13 +277,23 @@ def process_pages(
     page_details = []
     for index, (result, _, rotation) in enumerate(runs):
         side = result["extraction"]["side"]
-        page_details.append({"index": index, "side": side, "rotation_degrees": rotation})
-        warnings.extend(f"Page {index + 1}: {warning}" for warning in result["extraction"]["warnings"])
+        source = page_sources[index]
+        source_index = int(source.get("source_page_index", index))
+        card_index = source.get("card_index")
+        label = f"Page {source_index + 1}"
+        if card_index is not None:
+            label += f", card {int(card_index) + 1}"
+        page_details.append({"index": index, "source_page_index": source_index,
+                             "card_index": card_index, "side": side, "rotation_degrees": rotation})
+        warnings.extend(f"{label}: {warning}" for warning in result["extraction"]["warnings"])
         if rotation:
-            warnings.append(f"Page {index + 1}: automatically rotated {rotation} degrees for reading.")
-        if side == "unknown":
-            warnings.append(f"Page {index + 1}: page side was not recognized; its text was not used.")
+            warnings.append(f"{label}: automatically rotated {rotation} degrees for reading.")
+        if side == "unknown" and page_isolated[index]:
+            warnings.append(f"{label}: page side was not recognized; its text was not used.")
+    if front_index is None:
+        warnings.append("No front side was detected; front-side fields were left blank rather than read from the back.")
     extraction["warnings"] = warnings
+    extraction["crop_boxes"] = crop_boxes
 
     categories = ("ocr", "extraction", "verification", "flagging", "total")
     timing = {key: sum(result["timing_ms"][key] for result, _, _ in runs) for key in categories}

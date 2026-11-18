@@ -176,16 +176,68 @@ def case_image(case_id: int, token: str | None = None, authorization: str | None
     return FileResponse(p, media_type="image/png")
 
 
+RETURNED_FIELDS = (
+    "nrc_number", "card_number", "full_name", "date_of_birth", "place_of_birth_village",
+    "sex", "village", "district", "chief", "registration_date", "special_marks",
+)
+RETURNED_FIELD_LABELS = {
+    "nrc_number": "NRC number", "card_number": "card number", "full_name": "full name",
+    "date_of_birth": "date of birth", "place_of_birth_village": "place of birth",
+    "sex": "sex", "village": "village", "district": "district", "chief": "chief",
+    "registration_date": "registration date",
+}
+
+
+def _refresh_capture_quality(result: dict) -> None:
+    page_cropped = (result.get("preprocessing") or {}).get("page_cropped", [])
+    uncropped = [i for i, cropped in enumerate(page_cropped) if not cropped]
+    reasons = []
+    if uncropped:
+        page_details = (result.get("preprocessing") or {}).get("pages", [])
+        source_pages = sorted({
+            int(page_details[i].get("source_page_index", i)) + 1
+            if i < len(page_details) else i + 1
+            for i in uncropped
+        })
+        pages = ", ".join(str(i) for i in source_pages)
+        reasons.append(
+            f"Could not isolate the full card boundary on page(s) {pages}. Retake with all four card edges visible."
+        )
+    unreadable, very_low = [], []
+    fields = result.get("extraction", {}).get("fields", {})
+    for key in RETURNED_FIELDS:
+        if key == "special_marks":
+            continue
+        field = fields.get(key, {})
+        if not field.get("value"):
+            unreadable.append(RETURNED_FIELD_LABELS[key])
+        elif field.get("confidence", 0) < 0.65:
+            very_low.append(RETURNED_FIELD_LABELS[key])
+    if unreadable:
+        reasons.append("Could not read " + ", ".join(unreadable) + ". Retake closer, in focus, with even lighting.")
+    if very_low:
+        reasons.append("Very low OCR confidence for " + ", ".join(very_low) + ". Retake closer and in focus.")
+    result["capture_quality"] = {"retake_recommended": bool(reasons), "reasons": reasons}
+
+
+
 def create_case(c, data: bytes, filename: str, tpin: str | None, actor: str, tokens=None, ref=None) -> int:
     images, preprocessing = prepare_document_pages(data, filename)
     record = db.get_taxpayer(c, tpin=tpin) if tpin else None
-    result, disp, pages = process_pages(images, record, tokens)
+    # Every isolated card page uses field crops; pages without a reliable card
+    # boundary are retained as evidence but explicitly excluded from OCR.
+    result, disp, pages = process_pages(
+        images, record, tokens, force_crop=True, page_isolated=preprocessing["page_cropped"],
+        page_sources=preprocessing["page_sources"],
+    )
     result["preprocessing"] = {
         **preprocessing,
         "ocr_input": "grayscale with contrast enhancement",
         "pages": [
             {
                 "index": i,
+                "source_page_index": page["source_page_index"],
+                "card_index": page["card_index"],
                 "card_cropped": preprocessing["page_cropped"][i],
                 "side": page["side"],
                 "rotation_degrees": page["rotation_degrees"],
@@ -193,11 +245,23 @@ def create_case(c, data: bytes, filename: str, tpin: str | None, actor: str, tok
             for i, page in enumerate(pages)
         ],
     }
-    for i, was_cropped in enumerate(preprocessing["page_cropped"]):
-        if not was_cropped:
-            result["extraction"]["warnings"].append(
-                f"Page {i + 1}: card boundary was not confidently detected; review fields near stamps or handwriting."
-            )
+    uncropped_pages = [
+        i for i, was_cropped in enumerate(preprocessing["page_cropped"]) if not was_cropped
+    ]
+    if uncropped_pages:
+        # OCR confidence alone is not enough when the card was not isolated from the page.
+        for field in result["extraction"]["fields"].values():
+            page_index = field.get("page_index")
+            if (field.get("status") == "accepted" and field.get("raw") != "DEFAULT:NIL"
+                    and (page_index is None or page_index in uncropped_pages)):
+                field["status"] = "needs_review"
+                field["status_reason"] = "The card boundary was not confidently isolated on this page."
+        from . import flags as F
+        result["flags"].append(F._flag(
+            "CARD_BOUNDARY_UNCERTAIN", "medium", "Card boundary needs review",
+            "The card could not be confidently isolated. No values were read from this page; request a retake with all four edges visible.",
+        ))
+        result["risk"] = F.risk(result["flags"], result["verification"], result["tamper"])
     if record is None and not tpin:
         # Fall back to looking the taxpayer up by the extracted NRC number
         nrc = result["extraction"]["fields"]["nrc_number"]["value"]
@@ -228,6 +292,30 @@ def create_case(c, data: bytes, filename: str, tpin: str | None, actor: str, tok
                                               f"NRC {nrc} was already presented as {others[0]['full_name']} "
                                               f"(case {others[0]['ref']}).", "nrc_number"))
             result["risk"] = F.risk(result["flags"], result["verification"], result["tamper"])
+    _refresh_capture_quality(result)
+
+    # Keep the response focused on the requested NRC fields.
+    result["extraction"]["fields"] = {
+        key: result["extraction"]["fields"][key]
+        for key in RETURNED_FIELDS if key in result["extraction"]["fields"]
+    }
+    result["extraction"]["crop_boxes"] = {
+        key: box for key, box in result["extraction"].get("crop_boxes", {}).items()
+        if key in RETURNED_FIELDS
+    }
+    result["forensic_boxes"] = {
+        key: box for key, box in result.get("forensic_boxes", {}).items() if key in RETURNED_FIELDS
+    }
+    result["flags"] = [
+        flag for flag in result["flags"]
+        if not flag.get("field") or flag.get("field") in RETURNED_FIELDS
+    ]
+    result["tamper"] = {
+        key: value for key, value in result.get("tamper", {}).items() if key in RETURNED_FIELDS
+    }
+    from . import flags as F
+    result["risk"] = F.risk(result["flags"], result["verification"], result["tamper"])
+
     ref = ref or f"SC-{uuid.uuid4().hex[:8].upper()}"
     img_path = IMAGES / f"{ref}.png"
     img_path.write_bytes(encode_png(disp))

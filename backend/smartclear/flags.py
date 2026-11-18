@@ -136,11 +136,15 @@ def rule_flags(fields: dict, conf: dict, today: date | None = None) -> list[dict
         flags.append(_flag("REG_FUTURE", "high", "Registration date in the future", f"{reg.isoformat()} is after today.",
                            "registration_date"))
 
-    for f in FIELDS:
-        c = conf.get(f)
-        if fields.get(f) and c is not None and c < OCR_LOW_CONFIDENCE:
-            flags.append(_flag("LOW_OCR_CONFIDENCE", "low", f"{FIELD_LABEL[f]} hard to read",
-                               f"OCR confidence {c:.0%} — please check the value against the image.", f))
+    if fields.get("sex") not in ("M", "F"):
+        flags.append(_flag("SEX_NEEDS_REVIEW", "medium", "Sex field needs review",
+                           "OCR did not read a clear M or F. Check the card before relying on this field.", "sex"))
+
+    for f, c in conf.items():
+        if f != "special_marks" and fields.get(f) and c is not None and c < OCR_LOW_CONFIDENCE:
+            label = FIELD_LABEL.get(f, f.replace("_", " ").title())
+            flags.append(_flag("LOW_OCR_CONFIDENCE", "medium", f"{label} needs review",
+                               f"OCR confidence {c:.0%} — check the value against the evidence crop.", f))
     return flags
 
 

@@ -67,8 +67,16 @@ def main(robust_n=20):
             if truth == got:
                 ext[f]["correct"] += 1
             else:
-                ext[f]["errors"].append({"doc": doc, "expected": g[f], "got": res[f]["value"]})
-    extraction = {f: {"accuracy": round(v["correct"] / v["total"], 4), "n": v["total"], "errors": v["errors"][:5]}
+                ext[f]["errors"].append({
+                    "doc": doc,
+                    "expected": g[f],
+                    "got": res[f]["value"],
+                    "raw": res[f].get("raw", ""),
+                    "confidence": res[f].get("confidence", 0.0),
+                    "status": res[f].get("status", "unknown"),
+                    "bbox": res[f].get("bbox"),
+                })
+    extraction = {f: {"accuracy": round(v["correct"] / v["total"], 4), "n": v["total"], "errors": v["errors"]}
                   for f, v in ext.items()}
     key_correct = sum(ext[f]["correct"] for f in KEY)
     key_total = sum(ext[f]["total"] for f in KEY)

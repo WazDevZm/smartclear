@@ -19,6 +19,13 @@ def code(text: str) -> dict:
             "source": text.strip("\n").splitlines(True)}
 
 
+# The frozen-backbone training wrapper is written into the notebook from the same file.
+WRAPPER_SRC = (HERE.parent / 'train_frozen.py').read_text(encoding='utf-8')
+NL = chr(10)
+WRITE_WRAPPER = ('WRAPPER_SRC = ' + repr(WRAPPER_SRC) + NL +
+                 "open('/content/train_frozen.py', 'w').write(WRAPPER_SRC)" + NL +
+                 "print('frozen-backbone training script written')" + NL)
+
 CELLS = [
     md("""
 # NRC text recognition: fine-tune PP-OCRv4 (English)
@@ -37,11 +44,23 @@ Only synthetic data is used here. Do not upload real NRC scans to this notebook.
 # Colab runs Python 3.13, and paddlepaddle 2.6.2 has no 3.13 build. This makes a separate
 # Python 3.12 environment with uv and installs Paddle there (same versions as the local run).
 !pip install -q uv
+# The Paddle GPU wheel is about 1 GB; the default 30 s download timeout is too short.
+import os
+os.environ['UV_HTTP_TIMEOUT'] = '600'
 !uv venv --python 3.12 /content/py312
 !uv pip install --python /content/py312/bin/python "numpy<2" setuptools paddlepaddle-gpu==2.6.2
 !git clone -q --depth 1 --branch release/2.10 https://github.com/PaddlePaddle/PaddleOCR.git
 %cd PaddleOCR
-!uv pip install --python /content/py312/bin/python -r requirements.txt paddle2onnx
+# Keep numpy 1.x and OpenCV 4.10 (Paddle 2.6 was built against numpy 1.x). Without these pins
+# the PaddleOCR requirements upgrade numpy to 2.x and break Paddle.
+!printf "numpy==1.26.4\\nopencv-python==4.10.0.84\\nopencv-python-headless==4.10.0.84\\nopencv-contrib-python==4.10.0.84\\n" > /content/constraints.txt
+!uv pip install --python /content/py312/bin/python -r requirements.txt -c /content/constraints.txt
+# Export and ONNX conversion use Paddle 3.1.1 with paddle2onnx 2.1.0. paddle2onnx 2.x needs
+# Paddle 3.x, and the 2.6 checkpoints load fine in 3.1.1 (checked on the stock weights).
+!uv venv --python 3.12 /content/py312_export
+!uv pip install --python /content/py312_export/bin/python -r requirements.txt -c /content/constraints.txt setuptools paddlepaddle==3.1.1 paddle2onnx==2.1.0
+PY_EXPORT = '/content/py312_export/bin/python'
+!{PY_EXPORT} -c "import paddle, paddle2onnx; print('export env: paddle', paddle.__version__, '| paddle2onnx', paddle2onnx.__version__)"
 # The notebook's own Python (3.13) only needs these for the analysis cells.
 !pip install -q onnxruntime rapidfuzz
 PY = '/content/py312/bin/python'
@@ -55,8 +74,16 @@ The data zip was split into five parts (each under 10 MB) and stored in the Driv
 """),
     code("""
 from google.colab import drive
-drive.mount('/content/drive')
-!cat "/content/drive/MyDrive/smartclear_ocr/ocr_rec.zip.part"* > /content/ocr_rec.zip
+import glob
+drive.mount('/content/drive', force_remount=True)   # refresh a mount left over from an earlier run
+parts =sorted(glob.glob('/content/drive/MyDrive/smartclear_ocr/ocr_rec.zip.part*'))
+if not parts:
+    raise SystemExit(
+        "The data parts are not in My Drive. The folder was shared with you, so it sits under "
+        "'Shared with me'. In Google Drive, open 'Shared with me', right-click the smartclear_ocr "
+        "folder, choose 'Add shortcut to Drive' and put it in My Drive. Then run this cell again.")
+print(len(parts), 'parts found')
+!cat {' '.join(parts)} > /content/ocr_rec.zip
 !python -c "import zipfile; print('zip ok:', zipfile.ZipFile('/content/ocr_rec.zip').testzip() is None)"
 !unzip -q -o /content/ocr_rec.zip -d /content/data
 !ls /content/data/ocr_rec
@@ -77,13 +104,20 @@ and paths pointing at the unzipped data. The label files are the same ones the l
 import yaml
 cfg = yaml.safe_load(open('configs/rec/PP-OCRv4/en_PP-OCRv4_rec.yml'))
 DATA = '/content/data/ocr_rec'
-BATCH = 128
-EPOCHS = 40
-STEPS = 2405 // BATCH + 1
+BATCH = 64
+EPOCHS = 30
+# Steps per epoch from the real training file (ceiling division), so validation runs once per epoch.
+N_TRAIN = sum(1 for _ in open('/content/data/ocr_rec/train.txt'))
+STEPS = -(-N_TRAIN // BATCH)
+# Checkpoints go to Drive, so a disconnect cannot lose them.
+FREEZE = True   # True: backbone frozen, only neck and heads train (the option we are testing)
+OUT_DIR = '/content/drive/MyDrive/smartclear_ocr/runs/' + ('nrc_rec_frozen' if FREEZE else 'nrc_rec')
+TRAIN_SCRIPT = '/content/train_frozen.py' if FREEZE else 'tools/train.py'
+print('train crops', N_TRAIN, '| steps per epoch', STEPS)
 
 cfg['Global'].update({
     'use_gpu': True, 'distributed': False, 'epoch_num': EPOCHS,
-    'save_model_dir': '/content/output/nrc_rec', 'save_epoch_step': 5,
+    'save_model_dir': OUT_DIR, 'save_epoch_step': 5,
     'eval_batch_step': [0, STEPS], 'pretrained_model': '/content/pretrained/en_PP-OCRv4_rec_train/best_accuracy',
     'character_dict_path': 'ppocr/utils/en_dict.txt', 'cal_metric_during_train': True,
 })
@@ -97,13 +131,49 @@ yaml.safe_dump(cfg, open('/content/nrc_rec.yml', 'w'), sort_keys=False, allow_un
 print('config written; steps per epoch ~', STEPS)
 """),
     md("## 4. Train (about 5 to 15 minutes on a T4 for 40 epochs)"),
+    code(WRITE_WRAPPER),
     code("""
-!{PY} tools/train.py -c /content/nrc_rec.yml 2>&1 | tee /content/train.log
+import subprocess
+def run_logged(cmd, log, append=False):
+    # Run a PaddleOCR command, keep its full output in `log`, and stop with the tail on failure.
+    # Stream progress into the notebook as it happens (epoch, loss, validation scores, errors).
+    keep = ('epoch:', 'cur metric', 'best metric', 'Error', 'Traceback', 'Exception')
+    with open(log, 'a' if append else 'w') as f:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, errors='replace')
+        for line in p.stdout:
+            f.write(line)
+            if any(k in line for k in keep):
+                print(line.rstrip()[:220], flush=True)
+        p.wait()
+    if p.returncode != 0:
+        print('FAILED with exit code', p.returncode, '- last lines of', log)
+        print(open(log, errors='ignore').read()[-4000:])
+        raise SystemExit(p.returncode)
+    print('finished OK, log saved to', log)
+
+# Smoke test: one epoch (about a minute). Catches setup problems before the long run.
+run_logged([PY, TRAIN_SCRIPT, '-c', '/content/nrc_rec.yml',
+            '-o', 'Global.epoch_num=1', 'Global.save_model_dir=/content/output/smoke',
+            'Global.eval_batch_step=[0,100000]'], '/content/smoke.log')
+
+# Full training. The log is the file the curves cell reads.
+# If the runtime disconnected earlier, resume from the latest checkpoint on Drive
+# (saved every 5 epochs) and keep appending to the same log.
+import os
+latest = OUT_DIR + '/latest'
+if os.path.exists(latest + '.pdparams'):
+    print('resuming from', latest)
+    run_logged([PY, TRAIN_SCRIPT, '-c', '/content/nrc_rec.yml', '-o', 'Global.checkpoints=' + latest],
+               '/content/train.log', append=True)
+else:
+    print('starting from the pretrained model')
+    run_logged([PY, TRAIN_SCRIPT, '-c', '/content/nrc_rec.yml'], '/content/train.log')
 """),
     md("## 5. Evaluate on validation and test (exact-match accuracy)"),
     code("""
 import subprocess
-best = '/content/output/nrc_rec/best_accuracy'
+best = OUT_DIR + '/best_accuracy'
 for split in ['val', 'test']:
     print('=== ', split)
     subprocess.run([PY, 'tools/eval.py', '-c', '/content/nrc_rec.yml',
@@ -117,9 +187,9 @@ Exports an inference model and converts it to ONNX, so the existing ONNX Runtime
 load it. Download `nrc_rec_onnx.zip` and send it back for integration.
 """),
     code("""
-!{PY} tools/export_model.py -c /content/nrc_rec.yml -o Global.pretrained_model={best} \\
+!{PY_EXPORT} tools/export_model.py -c /content/nrc_rec.yml -o Global.pretrained_model={best} \\
   Global.save_inference_dir=/content/inference/nrc_rec
-!/content/py312/bin/paddle2onnx --model_dir /content/inference/nrc_rec \\
+!/content/py312_export/bin/paddle2onnx --model_dir /content/inference/nrc_rec \\
   --model_filename inference.pdmodel --params_filename inference.pdiparams \\
   --save_file /content/inference/nrc_rec.onnx --opset_version 11
 !mkdir -p /content/inference && cp /content/nrc_rec.yml /content/inference/
@@ -194,9 +264,9 @@ sess = ort.InferenceSession('/content/inference/nrc_rec.onnx', providers=['CPUEx
 inp_name = sess.get_inputs()[0].name
 C = sess.get_outputs()[0].shape[-1]
 dict_chars = [l.rstrip('\\r\\n') for l in open('/content/PaddleOCR/ppocr/utils/en_dict.txt', encoding='utf-8')]
-CHARS = ['blank'] + dict_chars
-if ' ' not in CHARS:
-    CHARS.append(' ')
+# PaddleOCR builds the list as blank + dictionary + a space, appended unconditionally,
+# so the model has len(dictionary) + 2 outputs (97 here).
+CHARS = ['blank'] + dict_chars + [' ']
 print('model classes', C, '| dictionary entries', len(CHARS))
 if len(CHARS) != C:
     print('WARNING: dictionary size does not match the model output; check before trusting results')
@@ -325,24 +395,93 @@ for f in ['/content/train.log', '/content/nrc_rec.yml', '/content/nrc_rec_onnx.z
         shutil.copy(f, dest)
 shutil.copytree('/content/results', dest + '/results', dirs_exist_ok=True)
 shutil.copytree('/content/inference', dest + '/inference', dirs_exist_ok=True)
-for f in os.listdir('/content/output/nrc_rec'):
+for f in os.listdir(OUT_DIR):
     if f.startswith('best_accuracy') or f.startswith('latest'):
-        shutil.copy(os.path.join('/content/output/nrc_rec', f), dest + '/checkpoint')
+        shutil.copy(os.path.join(OUT_DIR, f), dest + '/checkpoint')
 print('saved to', dest)
 """),
 ]
 
 
-def main() -> None:
+KAGGLE_INTRO = """
+# NRC text recognition: fine-tune PP-OCRv4 (English), Kaggle version
+
+Same steps as the Colab notebook, adapted for Kaggle:
+- The data comes from the attached dataset **smartclear ocr data** (`/kaggle/input/smartclear-ocr-data`).
+- Everything is written to `/kaggle/working`, which Kaggle keeps as the run's output.
+- Run it with **Save Version > Save & Run All (Commit)**. It keeps running if you close the browser.
+
+Settings before you run: Accelerator = GPU T4 x1, Internet = On.
+Only synthetic data is used here.
+"""
+
+KAGGLE_DATA = """
+# The data is the zip attached from the Kaggle dataset.
+import os, zipfile
+src = '/kaggle/input/smartclear-ocr-data/ocr_rec.zip'
+assert os.path.exists(src), 'Attach the dataset first: Add Input > smartclear ocr data'
+zipfile.ZipFile(src).extractall('/kaggle/working/data')
+print(sorted(os.listdir('/kaggle/working/data/ocr_rec')))
+"""
+
+KAGGLE_BUNDLE = """
+import datetime, shutil, os
+dest = '/kaggle/working/model_bundle'
+os.makedirs(dest + '/checkpoint', exist_ok=True)
+for f in ['/kaggle/working/train.log', '/kaggle/working/nrc_rec.yml', '/kaggle/working/nrc_rec_onnx.zip']:
+    if os.path.exists(f):
+        shutil.copy(f, dest)
+shutil.copytree('/kaggle/working/results', dest + '/results', dirs_exist_ok=True)
+shutil.copytree('/kaggle/working/inference', dest + '/inference', dirs_exist_ok=True)
+for f in os.listdir(OUT_DIR):
+    if f.startswith('best_accuracy') or f.startswith('latest'):
+        shutil.copy(os.path.join(OUT_DIR, f), dest + '/checkpoint')
+print('model bundle saved to', dest)
+"""
+
+
+def to_kaggle(cells):
+    """Turn the Colab cells into Kaggle cells: no Drive, no Colab downloads, /kaggle/working paths."""
+    out = [md(KAGGLE_INTRO)]
+    for c in cells:
+        src = ''.join(c["source"])
+        if c["cell_type"] == "markdown":
+            text = ''.join(c["source"])
+            if text.startswith("# NRC text recognition"):
+                continue  # replaced by the Kaggle intro
+            text = (text.replace("Google Drive", "Kaggle")
+                        .replace("Drive folder `smartclear_ocr`", "attached Kaggle dataset")
+                        .replace("Drive", "Kaggle"))
+            out.append(md(text))
+            continue
+        if "drive.mount" in src:
+            out.append(code(KAGGLE_DATA))
+            continue
+        if "datetime.datetime.now()" in src:
+            out.append(code(KAGGLE_BUNDLE))
+            continue
+        lines = [l for l in src.splitlines() if "google.colab" not in l and "files.download" not in l]
+        text = "\n".join(lines)
+        text = text.replace("/content/drive/MyDrive/smartclear_ocr/runs/nrc_rec", "/kaggle/working/runs/nrc_rec")
+        text = text.replace("/content/", "/kaggle/working/")
+        out.append(code(text))
+    return out
+
+
+def write_nb(cells, path, colab: bool) -> None:
     nb = {
-        "cells": CELLS,
-        "metadata": {"accelerator": "GPU", "colab": {"provenance": []},
+        "cells": cells,
+        "metadata": {"accelerator": "GPU", "colab": {"provenance": []} if colab else {},
                      "kernelspec": {"display_name": "Python 3", "name": "python3"}},
         "nbformat": 4, "nbformat_minor": 0,
     }
-    out = HERE / "nrc_rec_finetune.ipynb"
-    out.write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
-    print("wrote", out)
+    path.write_text(json.dumps(nb, indent=1, ensure_ascii=False), encoding="utf-8")
+    print("wrote", path)
+
+
+def main() -> None:
+    write_nb(CELLS, HERE / "nrc_rec_finetune.ipynb", colab=True)
+    write_nb(to_kaggle(CELLS), HERE / "nrc_rec_finetune_kaggle.ipynb", colab=False)
 
 
 if __name__ == "__main__":

@@ -58,11 +58,11 @@ def _rectify_quad(image: np.ndarray, quad: np.ndarray) -> np.ndarray:
     )
 
 
-def crop_card(image: np.ndarray) -> tuple[np.ndarray, bool]:
-    """Crop and perspective-correct a clearly dominant card."""
+def crop_cards(image: np.ndarray) -> tuple[list[np.ndarray], bool]:
+    """Find and perspective-correct one or more distinct cards on a page."""
     height, width = image.shape[:2]
     if min(height, width) < 160:
-        return image, False
+        return [image], False
 
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(cv2.GaussianBlur(gray, (5, 5), 0), 40, 120)
@@ -71,35 +71,41 @@ def crop_card(image: np.ndarray) -> tuple[np.ndarray, bool]:
     edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
     contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
-    quadrilaterals = []
-    rectangles = []
+    candidates = []
     for contour in contours:
-        x, y, w, h = cv2.boundingRect(contour)
-        if min(w, h) >= 100:
-            area_ratio = cv2.contourArea(contour) / (width * height)
-            aspect = max(w / h, h / w)
-            if 0.16 <= area_ratio <= 0.85 and 1.0 <= aspect <= 2.0:
-                rectangles.append((area_ratio, (x, y, w, h), None))
-
         perimeter = cv2.arcLength(contour, True)
         if perimeter <= 0:
             continue
         polygon = cv2.approxPolyDP(contour, 0.02 * perimeter, True)
-        if len(polygon) != 4 or not cv2.isContourConvex(polygon):
+        if len(polygon) == 4 and cv2.isContourConvex(polygon):
+            quad = polygon.reshape(4, 2).astype(np.float32)
+        else:
+            # A noisy card outline may not approximate to exactly four points. Use
+            # the rotated rectangle only when the contour still fills that shape.
+            rect = cv2.minAreaRect(contour)
+            rect_width, rect_height = rect[1]
+            if min(rect_width, rect_height) < 120 or rect_width * rect_height <= 0:
+                continue
+            if cv2.contourArea(contour) / (rect_width * rect_height) < 0.72:
+                continue
+            quad = cv2.boxPoints(rect).astype(np.float32)
+
+        rect_width, rect_height = cv2.minAreaRect(quad)[1]
+        if min(rect_width, rect_height) < 120 or rect_width * rect_height <= 0:
             continue
-        quad = polygon.reshape(4, 2).astype(np.float32)
-        rect = cv2.minAreaRect(quad)
-        rect_width, rect_height = rect[1]
-        if min(rect_width, rect_height) < 100:
-            continue
-        area_ratio = cv2.contourArea(polygon) / (width * height)
         aspect = max(rect_width / rect_height, rect_height / rect_width)
-        if 0.16 <= area_ratio <= 0.85 and 1.0 <= aspect <= 2.0:
-            x, y, w, h = cv2.boundingRect(polygon)
-            quadrilaterals.append((area_ratio, (x, y, w, h), quad))
+        # Zambian NRCs are elongated cards. This filters out most page text boxes.
+        if not 1.20 <= aspect <= 2.05:
+            continue
+        area_ratio = cv2.contourArea(quad) / (width * height)
+        if not 0.07 <= area_ratio <= 0.88:
+            continue
+        x, y, w, h = cv2.boundingRect(quad.astype(np.int32))
+        if w < 120 or h < 120:
+            continue
+        candidates.append((area_ratio, (x, y, w, h), quad))
 
     # Collapse nested outlines of the same card before checking for ambiguity.
-    candidates = quadrilaterals or rectangles
     candidates.sort(key=lambda candidate: candidate[0], reverse=True)
     distinct = []
     for area, box, quad in candidates:
@@ -115,22 +121,29 @@ def crop_card(image: np.ndarray) -> tuple[np.ndarray, bool]:
             distinct.append((area, box, quad))
 
     if not distinct:
-        return image, False
+        return [image], False
 
-    largest_area, _, quad = distinct[0]
-    if len(distinct) > 1 and distinct[1][0] >= largest_area * 0.45:
-        return image, False
-
-    if quad is not None:
+    # Two similarly sized cards on one scanned page commonly represent the
+    # front and back. Keep non-overlapping card candidates and let OCR classify
+    # each cropped card independently instead of rejecting the whole page.
+    distinct.sort(key=lambda candidate: (candidate[1][1], candidate[1][0]))
+    rectified_cards = []
+    for _, _, quad in distinct:
         rectified = _rectify_quad(image, quad)
-        if rectified is not image:
-            return rectified, True
-    x, y, w, h = distinct[0][1]
-    pad_x, pad_y = max(4, round(w * 0.015)), max(4, round(h * 0.015))
-    x0, y0 = max(0, x - pad_x), max(0, y - pad_y)
-    x1, y1 = min(width, x + w + pad_x), min(height, y + h + pad_y)
-    rectified = image[y0:y1, x0:x1]
-    return rectified, True
+        if rectified is image or min(rectified.shape[:2]) < 100:
+            continue
+        rectified_cards.append(rectified)
+    if not rectified_cards:
+        return [image], False
+    return rectified_cards, True
+
+
+def crop_card(image: np.ndarray) -> tuple[np.ndarray, bool]:
+    """Compatibility helper for callers expecting a single card crop."""
+    cards, isolated = crop_cards(image)
+    if not isolated or len(cards) != 1:
+        return image, False
+    return cards[0], True
 
 
 def _stack_pages(pages: list[np.ndarray]) -> np.ndarray:
@@ -166,8 +179,7 @@ def prepare_document_pages(
         import pypdfium2 as pdfium
 
         pdf = pdfium.PdfDocument(data)
-        pages = []
-        crop_status = []
+        source_pages = []
         for index, page in enumerate(reader.pages):
             try:
                 images = list(page.images)
@@ -177,23 +189,35 @@ def prepare_document_pages(
                 image = _pil_to_bgr(images[0].image)
             else:
                 image = _pil_to_bgr(pdf[index].render(scale=200 / 72).to_pil())
-            image, was_cropped = crop_card(image)
-            pages.append(image)
-            crop_status.append(was_cropped)
+            source_pages.append(image)
     else:
-        image, was_cropped = crop_card(_pil_to_bgr(Image.open(io.BytesIO(data))))
-        pages = [image]
-        crop_status = [was_cropped]
+        source_pages = [_pil_to_bgr(Image.open(io.BytesIO(data)))]
 
-    if not pages:
+    if not source_pages:
         raise ValueError("Document contains no pages")
+
+    pages = []
+    crop_status = []
+    page_sources = []
+    for source_index, source_image in enumerate(source_pages):
+        cards, was_cropped = crop_cards(source_image)
+        if was_cropped:
+            for card_index, card in enumerate(cards):
+                pages.append(card)
+                crop_status.append(True)
+                page_sources.append({"source_page_index": source_index, "card_index": card_index})
+        else:
+            pages.append(source_image)
+            crop_status.append(False)
+            page_sources.append({"source_page_index": source_index, "card_index": None})
 
     cropped = sum(crop_status)
     return pages, {
-        "page_count": len(pages),
+        "page_count": len(source_pages),
         "cropped_page_count": cropped,
         "card_cropped": cropped > 0,
         "page_cropped": crop_status,
+        "page_sources": page_sources,
     }
 
 

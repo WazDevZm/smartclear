@@ -1,10 +1,13 @@
 """Central paths and tunables for SmartClear."""
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = ROOT / "data"
 MODELS_DIR = ROOT / "models"
-STORAGE_DIR = ROOT / "storage"          # uploaded docs, rendered images, crops
+# uploaded docs, rendered images, crops, DB. SMARTCLEAR_STORAGE_DIR (relative to the project root)
+# lets two copies of the app run side by side, e.g. one per text reader, without sharing cases.
+STORAGE_DIR = ROOT / os.environ.get("SMARTCLEAR_STORAGE_DIR", "storage")
 DB_PATH = STORAGE_DIR / "smartclear.db"
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 
@@ -18,6 +21,22 @@ DISTRICT_AUTO_CORRECT = 85     # at or above: replace with the canonical distric
 DISTRICT_SUGGEST = 70          # at or above (but below auto): keep OCR value, offer the district to the officer
 
 TAMPER_MODEL_PATH = MODELS_DIR / "tamper_model.joblib"
+
+# Text recognizer used for reading fields. Detection always uses the stock PP-OCR detector.
+#   stock: RapidOCR's bundled PP-OCRv4 recognizer (default, unchanged behaviour)
+#   onnx:  PP-OCRv4 English recognizer fine-tuned on synthetic NRC field crops (models/ocr/)
+# Choose with the SMARTCLEAR_OCR_READER environment variable.
+OCR_READERS = ("stock", "onnx")
+OCR_REC_MODEL_PATH = MODELS_DIR / "ocr" / "nrc_rec.onnx"
+OCR_REC_KEYS_PATH = MODELS_DIR / "ocr" / "nrc_rec_keys.txt"
+
+
+def ocr_reader() -> str:
+    """The text recognizer selected by SMARTCLEAR_OCR_READER ('stock' when unset)."""
+    reader = os.environ.get("SMARTCLEAR_OCR_READER", "stock").strip().lower() or "stock"
+    if reader not in OCR_READERS:
+        raise ValueError(f"SMARTCLEAR_OCR_READER must be one of {OCR_READERS}, got {reader!r}")
+    return reader
 REFERENCE_PATH = MODELS_DIR / "reference.json"   # district-code table learned from genuine specimens
 
 # Verification thresholds

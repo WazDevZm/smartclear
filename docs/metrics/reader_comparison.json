@@ -1,0 +1,760 @@
+{
+  "note": "Synthetic data only. Real NRC cards have not been measured.",
+  "readers": {
+    "stock": {
+      "crops": {
+        "by_source": {
+          "clean": {
+            "n": 159,
+            "exact": 0.6415,
+            "ignoring_spaces": 0.7421
+          },
+          "all": {
+            "n": 277,
+            "exact": 0.6282,
+            "ignoring_spaces": 0.722
+          },
+          "flatbed": {
+            "n": 40,
+            "exact": 0.575,
+            "ignoring_spaces": 0.675
+          },
+          "phone": {
+            "n": 52,
+            "exact": 0.6731,
+            "ignoring_spaces": 0.7308
+          },
+          "photocopy": {
+            "n": 26,
+            "exact": 0.5385,
+            "ignoring_spaces": 0.6538
+          }
+        },
+        "errors": [
+          {
+            "crop": "test/clean/nrc_0009_front_reg_no.png",
+            "expected": "473111/02/1",
+            "got": "473111/0271"
+          },
+          {
+            "crop": "test/clean/nrc_0009_back_card_no.png",
+            "expected": "Z 11806847",
+            "got": "Z11806847"
+          },
+          {
+            "crop": "test/clean/nrc_0009_back_dob.png",
+            "expected": "28.05.2000",
+            "got": "28.05.1000"
+          },
+          {
+            "crop": "test/clean/nrc_0009_back_pob.png",
+            "expected": "V. KASAMA",
+            "got": "V.KASHMA"
+          },
+          {
+            "crop": "test/clean/nrc_0009_back_village.png",
+            "expected": "KAMANGA",
+            "got": "KOMANGA"
+          },
+          {
+            "crop": "test/clean/nrc_0009_back_renunc.png",
+            "expected": "-",
+            "got": "\u4e00"
+          },
+          {
+            "crop": "test/flatbed/nrc_0009_back_card_no.png",
+            "expected": "Z 11806847",
+            "got": "Z11806847"
+          },
+          {
+            "crop": "test/flatbed/nrc_0009_back_pob.png",
+            "expected": "V. KASAMA",
+            "got": "M.KASHA"
+          },
+          {
+            "crop": "test/flatbed/nrc_0009_back_sex.png",
+            "expected": "F",
+            "got": "T"
+          },
+          {
+            "crop": "test/flatbed/nrc_0009_back_village.png",
+            "expected": "KAMANGA",
+            "got": "KMANGA"
+          }
+        ]
+      },
+      "whole_card": {
+        "documents": 100,
+        "key_fields_accuracy": 0.9898,
+        "all_fields_accuracy": 0.9649,
+        "docs_all_key_fields_correct": 98,
+        "per_field": {
+          "nrc_number": {
+            "accuracy": 1.0,
+            "correct": 98,
+            "n": 98,
+            "errors": []
+          },
+          "full_name": {
+            "accuracy": 0.9798,
+            "correct": 97,
+            "n": 99,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0102",
+                "expected": "NCHIMUNYA SINKALA MBEWE",
+                "got": "NCHIMUNYA SINKALA MBEWE CATTOEBANEN"
+              },
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "CHISANGA MBEWE LWEKO",
+                "got": null
+              }
+            ]
+          },
+          "date_of_birth": {
+            "accuracy": 0.9898,
+            "correct": 97,
+            "n": 98,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "05.07.72",
+                "got": null
+              }
+            ]
+          },
+          "card_number": {
+            "accuracy": 0.99,
+            "correct": 99,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "Z22511746",
+                "got": null
+              }
+            ]
+          },
+          "sex": {
+            "accuracy": 0.99,
+            "correct": 99,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "M",
+                "got": null
+              }
+            ]
+          },
+          "place_of_birth_village": {
+            "accuracy": 0.93,
+            "correct": 93,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "LUBWE",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0156",
+                "expected": "KAPULULWE",
+                "got": "RAPULULWE"
+              },
+              {
+                "doc": "NRC-SYN-0173",
+                "expected": "LUBWE",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0174",
+                "expected": "LUBWE",
+                "got": "LUBWB"
+              },
+              {
+                "doc": "NRC-SYN-0179",
+                "expected": "LUBWE",
+                "got": null
+              }
+            ]
+          },
+          "place_of_birth_district": {
+            "accuracy": 0.94,
+            "correct": 94,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "CHIPATA",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0128",
+                "expected": "KAPIRI",
+                "got": "KAPIRI MPOSHI"
+              },
+              {
+                "doc": "NRC-SYN-0136",
+                "expected": "KAPIRI",
+                "got": "KAPIRI MPOSHI"
+              },
+              {
+                "doc": "NRC-SYN-0162",
+                "expected": "KAFUE",
+                "got": "KAPUE"
+              },
+              {
+                "doc": "NRC-SYN-0190",
+                "expected": "KAPIRI",
+                "got": "KAPIRI MPOSHI"
+              }
+            ]
+          },
+          "village": {
+            "accuracy": 0.99,
+            "correct": 99,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "LUBWE",
+                "got": null
+              }
+            ]
+          },
+          "district": {
+            "accuracy": 0.96,
+            "correct": 96,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "CHIPATA",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0128",
+                "expected": "KAPIRI",
+                "got": "KAPIRI MPOSHI"
+              },
+              {
+                "doc": "NRC-SYN-0136",
+                "expected": "KAPIRI",
+                "got": "KAPIRI MPOSHI"
+              },
+              {
+                "doc": "NRC-SYN-0190",
+                "expected": "KAPIRI",
+                "got": "KAPIRI MPOSHI"
+              }
+            ]
+          },
+          "chief": {
+            "accuracy": 0.83,
+            "correct": 83,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0107",
+                "expected": "KALONGA",
+                "got": "KALONGA NIL"
+              },
+              {
+                "doc": "NRC-SYN-0108",
+                "expected": "CHIKWANDA",
+                "got": "CHIKWANDA NIL"
+              },
+              {
+                "doc": "NRC-SYN-0111",
+                "expected": "NKANA",
+                "got": "NKANA NIL"
+              },
+              {
+                "doc": "NRC-SYN-0114",
+                "expected": "MUMENA",
+                "got": "MUMENA NIL"
+              },
+              {
+                "doc": "NRC-SYN-0115",
+                "expected": "KAINDU",
+                "got": "KAINDU NIL"
+              }
+            ]
+          },
+          "registration_date": {
+            "accuracy": 0.99,
+            "correct": 99,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "25.09.97",
+                "got": null
+              }
+            ]
+          },
+          "special_marks": {
+            "accuracy": 0.99,
+            "correct": 99,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "SCAR FOREHEAD",
+                "got": null
+              }
+            ]
+          }
+        },
+        "median_seconds_per_doc": 4.58
+      }
+    },
+    "onnx": {
+      "crops": {
+        "by_source": {
+          "clean": {
+            "n": 159,
+            "exact": 0.9811,
+            "ignoring_spaces": 0.9811
+          },
+          "all": {
+            "n": 277,
+            "exact": 0.9675,
+            "ignoring_spaces": 0.9675
+          },
+          "flatbed": {
+            "n": 40,
+            "exact": 0.975,
+            "ignoring_spaces": 0.975
+          },
+          "phone": {
+            "n": 52,
+            "exact": 0.9231,
+            "ignoring_spaces": 0.9231
+          },
+          "photocopy": {
+            "n": 26,
+            "exact": 0.9615,
+            "ignoring_spaces": 0.9615
+          }
+        },
+        "errors": [
+          {
+            "crop": "test/flatbed/nrc_0018_back_district.png",
+            "expected": "MAZABUKA",
+            "got": "MAZABUMA"
+          },
+          {
+            "crop": "test/clean/nrc_0064_back_dob.png",
+            "expected": "1.6.86",
+            "got": "16.86"
+          },
+          {
+            "crop": "test/clean/nrc_0098_back_chief.png",
+            "expected": "LUBOSI",
+            "got": "LUBOUI"
+          },
+          {
+            "crop": "test/photocopy/nrc_0098_back_district.png",
+            "expected": "MWANSABOMBWE",
+            "got": "MWAMSAEOMBWE"
+          },
+          {
+            "crop": "test/phone/nrc_0103_back_surname.png",
+            "expected": "CHILUFYA",
+            "got": "CHLUFYA"
+          },
+          {
+            "crop": "test/phone/nrc_0103_back_chief.png",
+            "expected": "MPEZENI",
+            "got": "MPEZEI"
+          },
+          {
+            "crop": "test/clean/nrc_0109_back_dob.png",
+            "expected": "09.02.1982",
+            "got": "09.02.198P"
+          },
+          {
+            "crop": "test/phone/nrc_0109_back_pob.png",
+            "expected": "T. KABWE",
+            "got": "T. KATWE"
+          },
+          {
+            "crop": "test/phone/nrc_0109_back_chief.png",
+            "expected": "NDAKE",
+            "got": "NDAKEI"
+          }
+        ]
+      },
+      "whole_card": {
+        "documents": 100,
+        "key_fields_accuracy": 0.9186,
+        "all_fields_accuracy": 0.8946,
+        "docs_all_key_fields_correct": 81,
+        "per_field": {
+          "nrc_number": {
+            "accuracy": 1.0,
+            "correct": 98,
+            "n": 98,
+            "errors": []
+          },
+          "full_name": {
+            "accuracy": 0.8081,
+            "correct": 80,
+            "n": 99,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0102",
+                "expected": "NCHIMUNYA SINKALA MBEWE",
+                "got": "NCHIMUNYA SINKALA MBEWE PNOEOFSRTE"
+              },
+              {
+                "doc": "NRC-SYN-0107",
+                "expected": "MEMORY MUMBA SAKALA",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "CHISANGA MBEWE LWEKO",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0123",
+                "expected": "MARY BANDA KAPEMBWA",
+                "got": "MARI BANDA KAPEMBWA"
+              },
+              {
+                "doc": "NRC-SYN-0126",
+                "expected": "JUSTINA TEMBO MULEYA",
+                "got": "LUSIINA TEMBO MULEYA"
+              }
+            ]
+          },
+          "date_of_birth": {
+            "accuracy": 0.949,
+            "correct": 93,
+            "n": 98,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0107",
+                "expected": "26.01.01",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "05.07.72",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0132",
+                "expected": "18.01.74",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0155",
+                "expected": "28.01.86",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0199",
+                "expected": "25.04.58",
+                "got": null
+              }
+            ]
+          },
+          "card_number": {
+            "accuracy": 0.95,
+            "correct": 95,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0107",
+                "expected": "Z15536120",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "Z22511746",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0132",
+                "expected": "Z40341027",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0155",
+                "expected": "Z33597545",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0199",
+                "expected": "Z25634916",
+                "got": null
+              }
+            ]
+          },
+          "sex": {
+            "accuracy": 0.93,
+            "correct": 93,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0107",
+                "expected": "F",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "M",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0123",
+                "expected": "F",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0132",
+                "expected": "F",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0155",
+                "expected": "M",
+                "got": null
+              }
+            ]
+          },
+          "place_of_birth_village": {
+            "accuracy": 0.9,
+            "correct": 90,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0107",
+                "expected": "LUBWE",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "LUBWE",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0132",
+                "expected": "LUKULU",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0133",
+                "expected": "SHIMABALA",
+                "got": "LNOTOFSRME"
+              },
+              {
+                "doc": "NRC-SYN-0155",
+                "expected": "MWEMBESHI",
+                "got": null
+              }
+            ]
+          },
+          "place_of_birth_district": {
+            "accuracy": 0.92,
+            "correct": 92,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0107",
+                "expected": "MWINILUNGA",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "CHIPATA",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0128",
+                "expected": "KAPIRI",
+                "got": "KAPIRI MPOSHI"
+              },
+              {
+                "doc": "NRC-SYN-0132",
+                "expected": "LUNDAZI",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0136",
+                "expected": "KAPIRI",
+                "got": "KAPIRI MPOSHI"
+              }
+            ]
+          },
+          "village": {
+            "accuracy": 0.93,
+            "correct": 93,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0107",
+                "expected": "LUBWE",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "LUBWE",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0132",
+                "expected": "LUKULU",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0155",
+                "expected": "MWEMBESHI",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0163",
+                "expected": "MUMENA",
+                "got": "VUAM MUMENA"
+              }
+            ]
+          },
+          "district": {
+            "accuracy": 0.92,
+            "correct": 92,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0107",
+                "expected": "MWINILUNGA",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "CHIPATA",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0128",
+                "expected": "KAPIRI",
+                "got": "KAPIRI MPOSHI"
+              },
+              {
+                "doc": "NRC-SYN-0132",
+                "expected": "LUNDAZI",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0136",
+                "expected": "KAPIRI",
+                "got": "KAPIRI MPOSHI"
+              }
+            ]
+          },
+          "chief": {
+            "accuracy": 0.83,
+            "correct": 83,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0107",
+                "expected": "KALONGA",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0108",
+                "expected": "CHIKWANDA",
+                "got": "CHIKWANDA NIL"
+              },
+              {
+                "doc": "NRC-SYN-0110",
+                "expected": "KANONGESHA",
+                "got": "KANONGESMA"
+              },
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "MACHA",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0126",
+                "expected": "CHIKWANDA",
+                "got": "CHIKWANDA NIL"
+              }
+            ]
+          },
+          "registration_date": {
+            "accuracy": 0.95,
+            "correct": 95,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0107",
+                "expected": "02.02.18",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0116",
+                "expected": "25.09.97",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0132",
+                "expected": "24.12.95",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0155",
+                "expected": "22.04.13",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0199",
+                "expected": "03.05.77",
+                "got": null
+              }
+            ]
+          },
+          "special_marks": {
+            "accuracy": 0.65,
+            "correct": 65,
+            "n": 100,
+            "errors": [
+              {
+                "doc": "NRC-SYN-0102",
+                "expected": "NIL",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0107",
+                "expected": "NIL",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0109",
+                "expected": "NIL",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0111",
+                "expected": "NIL",
+                "got": null
+              },
+              {
+                "doc": "NRC-SYN-0112",
+                "expected": "NIL",
+                "got": null
+              }
+            ]
+          }
+        },
+        "median_seconds_per_doc": 13.85
+      }
+    }
+  }
+}

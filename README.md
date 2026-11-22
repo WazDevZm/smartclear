@@ -42,6 +42,37 @@ Offline use: delete `storage/ocr_cache/` to force fresh OCR on repeat uploads (r
 
 Tests: `cd backend && ../.venv/bin/python -m pytest -q`
 
+### Choosing the text reader: stock or fine-tuned
+
+SmartClear can read card text with either of two recognizers. Text detection is the stock PP-OCR detector in both cases.
+
+| `SMARTCLEAR_OCR_READER` | Recognizer |
+|---|---|
+| `stock` (default) | RapidOCR's bundled PP-OCRv4 recognizer, unchanged |
+| `onnx` | PP-OCRv4 English recognizer fine-tuned on our generated synthetic NRC field crops (`models/ocr/`, training code on the `ocr-text-extraction` branch) |
+
+```bash
+SMARTCLEAR_OCR_READER=onnx ./run.sh                       # macOS / Linux
+$env:SMARTCLEAR_OCR_READER = "onnx"                       # Windows PowerShell, then start uvicorn as usual
+```
+
+Each reader keeps its own OCR cache entries, so switching never shows the other reader's results.
+To compare the two side by side: `.venv/bin/python backend/scripts/compare_readers.py` (writes `docs/metrics/reader_comparison.json`).
+
+**Measured result (22 Nov 2026, synthetic data only, real cards not measured):**
+
+| Test | Stock | Fine-tuned (onnx) |
+|---|---|---|
+| Facilitator cards (100 PDFs), key fields NRC / name / DOB | **99.0%** | 91.9% |
+| Facilitator cards, all 12 fields | **96.5%** | 89.5% |
+| Facilitator cards with all key fields right | **98 / 100** | 81 / 100 |
+| Held-out generated field crops (277), ignoring spaces | 72.2% | **96.8%** |
+
+The fine-tuned reader is much better on crops from the generated card set it was trained on, but worse on the facilitators'
+cards, which have a different look and which the app's field positions were tuned on (biggest drops: full name 98% → 81%,
+special marks 99% → 65%). **The stock reader stays the default.** Retraining with the facilitators' card style included is
+the next step before reconsidering. Timings from this run are not comparable: the onnx pass ran while other jobs shared the CPU.
+
 ## Results on the synthetic set (100 NRCs, 33 labelled fraudulent)
 
 | Brief success measure | Result | How it is measured |

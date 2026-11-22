@@ -389,10 +389,22 @@ def _read_zone(img: np.ndarray, M: np.ndarray, x0, y0, x1, y1, scale: float = 2.
     return _reading_order(toks)
 
 
-@lru_cache(maxsize=1)
 def get_engine():
+    """OCR engine for the recognizer chosen in config (SMARTCLEAR_OCR_READER)."""
+    from .config import ocr_reader
+
+    return _engine(ocr_reader())
+
+
+@lru_cache(maxsize=2)
+def _engine(reader: str):
     from rapidocr_onnxruntime import RapidOCR
 
+    if reader == "onnx":
+        from .config import OCR_REC_KEYS_PATH, OCR_REC_MODEL_PATH
+
+        # Detection stays on the stock PP-OCR detector; recognition uses the fine-tuned model.
+        return RapidOCR(rec_model_path=str(OCR_REC_MODEL_PATH), rec_keys_path=str(OCR_REC_KEYS_PATH))
     return RapidOCR()
 
 

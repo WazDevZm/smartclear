@@ -9,11 +9,11 @@ from smartclear.config import STORAGE_DIR, SYNTHETIC_PDF_DIR
 CACHE = STORAGE_DIR / "cache" / "docs"
 # load records
 by_doc = {}
-with open('data/taxpayer_records.csv') as fh:
+with open('data/synthetic_taxpayer_records.csv') as fh:
     for r in csv.DictReader(fh):
         by_doc[r['source_doc']] = r
 
-pdfs = [Path('data/synthetic_nrc')/f'nrc-syn-{i:04d}.pdf' for i in range(196,201)]
+pdfs = [Path('data/facilitator_nrc_pdfs')/f'nrc-syn-{i:04d}.pdf' for i in range(196,201)]
 db.init()
 with db.conn() as c:
     for p in pdfs:

@@ -23,7 +23,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from smartclear import db  # noqa: E402
 from smartclear.api import create_case  # noqa: E402
-from smartclear.config import DATA_DIR, DB_PATH, REFERENCE_PATH, STORAGE_DIR, SYNTHETIC_PDF_DIR  # noqa: E402
+from smartclear.config import (DB_PATH, GROUND_TRUTH_CSV, REFERENCE_PATH, STORAGE_DIR,  # noqa: E402
+                               SYNTHETIC_PDF_DIR, TAXPAYER_RECORDS_CSV)
 from smartclear.verify import parse_date  # noqa: E402
 
 CACHE = STORAGE_DIR / "cache" / "docs"
@@ -128,11 +129,11 @@ def make_records(gt, rng, codes):
 
 def main():
     rng = random.Random(2026)
-    gt = list(csv.DictReader(open(DATA_DIR / "ground_truth.csv")))
+    gt = list(csv.DictReader(open(GROUND_TRUTH_CSV)))
     codes = build_reference(gt)
     print(f"reference: {len(codes)} district codes")
     recs = make_records(gt, rng, codes)
-    with open(DATA_DIR / "taxpayer_records.csv", "w", newline="") as fh:
+    with open(TAXPAYER_RECORDS_CSV, "w", newline="") as fh:
         w = csv.DictWriter(fh, list(recs[0].keys()))
         w.writeheader()
         w.writerows(recs)

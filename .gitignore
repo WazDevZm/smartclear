@@ -12,3 +12,8 @@ data/real_nrc/
 .env
 data/real/
 
+
+# Local datasets (untracked; not for git)
+claude data/
+data/nrc_synth_v5/
+data/ocr_rec/

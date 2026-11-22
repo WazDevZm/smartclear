@@ -26,7 +26,7 @@ The prototype runs end to end on the synthetic set. This file covers three thing
 Please read these before presenting results:
 
 1. **Small, single-template dataset.** The 100 cards come from one generator with one layout. The extraction zones were calibrated on these same cards, so 100% here is a ceiling, not a forecast. Real scans (phone photos, glare, old laminated cards, folds) will score lower.
-2. **We created the labels.** `ground_truth.csv` comes from visually inspecting the synthetic set:
+2. **We created the labels.** `facilitator_ground_truth.csv` comes from visually inspecting the synthetic set:
    - 17 visual tampers
    - 11 district inconsistencies
    - 8 underage registrations

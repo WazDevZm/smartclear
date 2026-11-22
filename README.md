@@ -46,7 +46,7 @@ Tests: `cd backend && ../.venv/bin/python -m pytest -q`
 
 | Brief success measure | Result | How it is measured |
 |---|---|---|
-| Extraction accuracy (NRC no., name, DOB) | **100%** (300/300 legible fields) | vs manually verified reading, `data/ground_truth.csv` |
+| Extraction accuracy (NRC no., name, DOB) | **100%** (300/300 legible fields) | vs manually verified reading, `data/facilitator_ground_truth.csv` |
 | Extraction under perturbation | **100%** (20 docs) | rotation ±3°, scale ±5%, shift, noise, JPEG q70 |
 | Verification accuracy | **100%** (66 match / 7 review / 27 mismatch) | vs expected outcome per synthetic record scenario |
 | Fraud-flagging recall | **100%** (33/33) | district swaps 11/11, underage 8/8, visual tampers 17/17 |
@@ -151,11 +151,12 @@ Every submission, view and decision is written to the audit table.
 backend/smartclear/   config, document loading, extraction, gazetteer, verify, forensics, synth, flags, pipeline, db, api
 backend/scripts/      build_cache.py · train_tamper.py · seed.py · evaluate.py
 backend/tests/        pytest suite (verification, rules, live extraction)
-data/synthetic_nrc/   the 100 synthetic NRC PDFs supplied for the challenge
-data/ground_truth.csv     manually verified field values + fraud labels (type, tampered field, technique)
-data/taxpayer_records.csv synthetic "captured records" with a labelled test scenario per record
-data/zambia_districts.csv verified district list (district, province, district code) used for correction
-data/real_nrc/        real scans + labels.csv for scripts/evaluate_real.py; git-ignored, never commit
+data/                 see data/README.md for what each folder is and where it came from
+  facilitator_nrc_pdfs/            the 100 synthetic NRC PDFs supplied by the challenge facilitators
+  facilitator_ground_truth.csv     verified field values + fraud labels for those PDFs
+  synthetic_taxpayer_records.csv   synthetic "captured records", one labelled test scenario per card
+  zambia_districts.csv             verified district list (district, province, district code)
+  real_nrc/                        real scans + labels.csv for scripts/evaluate_real.py; git-ignored, never commit
 models/               tamper_model.joblib · reference.json · tamper_metrics.json · evaluation.json
 frontend/             officer web app (built into frontend/dist and served by FastAPI)
 storage/              runtime only (SQLite DB, uploads, rendered images, OCR cache); git-ignored

@@ -1,7 +1,7 @@
 """Train the field-level tamper detector on synthetic data.
 
 Training data
-  * real samples:      every (document, field) of the synthetic NRC set, labelled from data/ground_truth.csv
+  * real samples:      every (document, field) of the synthetic NRC set, labelled from data/facilitator_ground_truth.csv
   * synthetic forgeries: genuine fields altered by smartclear.synth (4 techniques)
   * benign augments:   genuine fields with JPEG/noise/brightness changes (label 0)
 
@@ -25,7 +25,7 @@ from sklearn.ensemble import RandomForestClassifier  # noqa: E402
 from sklearn.metrics import average_precision_score, precision_score, recall_score, roc_auc_score  # noqa: E402
 from sklearn.model_selection import GroupKFold  # noqa: E402
 
-from smartclear.config import DATA_DIR, MODELS_DIR, STORAGE_DIR, TAMPER_MODEL_PATH  # noqa: E402
+from smartclear.config import GROUND_TRUTH_CSV, MODELS_DIR, STORAGE_DIR, TAMPER_MODEL_PATH  # noqa: E402
 from smartclear.forensics import FEATURE_NAMES, FIELDS, compute_features, crop_box, vectorize  # noqa: E402
 from smartclear.synth import TECHNIQUES, benign_augment, tamper  # noqa: E402
 
@@ -35,7 +35,7 @@ AUG_PER_FIELD = 2       # benign augments per genuine field
 
 
 def load():
-    gt = {r["doc_id"]: r for r in csv.DictReader(open(DATA_DIR / "ground_truth.csv"))}
+    gt = {r["doc_id"]: r for r in csv.DictReader(open(GROUND_TRUTH_CSV))}
     docs = []
     for doc_id, g in sorted(gt.items()):
         js = CACHE / f"{doc_id}.json"

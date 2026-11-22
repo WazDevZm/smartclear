@@ -14,6 +14,6 @@ data/real/
 
 
 # Local datasets (untracked; not for git)
-claude data/
-data/nrc_synth_v5/
-data/ocr_rec/
+data/generated_nrc_cards_v5_zips/
+data/generated_nrc_cards_v5/
+data/generated_ocr_field_crops/

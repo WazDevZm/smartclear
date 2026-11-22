@@ -9,7 +9,9 @@ DB_PATH = STORAGE_DIR / "smartclear.db"
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 
 # Source synthetic dataset supplied with the challenge (sibling folder of the project)
-SYNTHETIC_PDF_DIR = DATA_DIR / "synthetic_nrc"
+SYNTHETIC_PDF_DIR = DATA_DIR / "facilitator_nrc_pdfs"         # the 100 synthetic NRC PDFs supplied by the facilitators
+GROUND_TRUTH_CSV = DATA_DIR / "facilitator_ground_truth.csv"     # verified field values + fraud labels for those PDFs
+TAXPAYER_RECORDS_CSV = DATA_DIR / "synthetic_taxpayer_records.csv"  # synthetic "captured records" (written by seed.py)
 
 DISTRICTS_CSV = DATA_DIR / "zambia_districts.csv"   # verified district list (DISTRICT, PROVINCE, DIST_CODE)
 

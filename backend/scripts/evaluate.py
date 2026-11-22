@@ -1,7 +1,7 @@
 """Evaluate SmartClear against the three success measures in the ZRA Challenge Brief.
 
-1. Extraction accuracy   — extracted fields vs the manually verified reading (data/ground_truth.csv)
-2. Verification accuracy — automated match/review/mismatch vs expected outcome (data/taxpayer_records.csv)
+1. Extraction accuracy   — extracted fields vs the manually verified reading (data/facilitator_ground_truth.csv)
+2. Verification accuracy — automated match/review/mismatch vs expected outcome (data/synthetic_taxpayer_records.csv)
 3. Fraud-flagging        — document flags vs the labelled fraudulent set. Tamper-model scores are the
                            out-of-fold cross-validated scores, so documents are never scored by a model
                            that saw them during training.
@@ -20,7 +20,8 @@ import cv2  # noqa: E402
 import numpy as np  # noqa: E402
 
 from smartclear import db  # noqa: E402
-from smartclear.config import DATA_DIR, MODELS_DIR, SYNTHETIC_PDF_DIR, TAMPER_FIELD_THRESHOLD  # noqa: E402
+from smartclear.config import (GROUND_TRUTH_CSV, MODELS_DIR, SYNTHETIC_PDF_DIR, TAMPER_FIELD_THRESHOLD,  # noqa: E402
+                               TAXPAYER_RECORDS_CSV)
 from smartclear.document import load_document  # noqa: E402
 from smartclear.extraction import extract  # noqa: E402
 from smartclear.verify import norm_name  # noqa: E402
@@ -43,8 +44,8 @@ def prf(tp, fp, fn):
 
 
 def main(robust_n=20):
-    gt = {r["doc_id"]: r for r in csv.DictReader(open(DATA_DIR / "ground_truth.csv"))}
-    recs = {r["source_doc"]: r for r in csv.DictReader(open(DATA_DIR / "taxpayer_records.csv"))}
+    gt = {r["doc_id"]: r for r in csv.DictReader(open(GROUND_TRUTH_CSV))}
+    recs = {r["source_doc"]: r for r in csv.DictReader(open(TAXPAYER_RECORDS_CSV))}
     tm = json.loads((MODELS_DIR / "tamper_metrics.json").read_text())
     oof = tm["oof_scores"]
     with db.conn() as c:

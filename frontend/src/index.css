@@ -2,29 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
+:root { color-scheme: light; }
 html, body, #root { min-height: 100%; }
 @layer base {
-  body { @apply bg-ink-950 text-slate-200 font-sans antialiased; }
-  html { overflow-x: clip; }
+  body { @apply bg-cream text-slate-700 font-sans antialiased; }
+  html { overflow-x: clip; scroll-behavior: smooth; }
 }
 
 @layer components {
-  .card { @apply rounded-2xl border border-white/[0.07] bg-white/[0.03] backdrop-blur-sm; }
-  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed; }
-  .btn-primary { @apply btn bg-gradient-to-r from-zra-sky to-clear-400 text-ink-950 hover:brightness-110 shadow-glow; }
-  .btn-ghost { @apply btn border border-white/10 bg-white/[0.03] text-slate-200 hover:bg-white/[0.08]; }
-  .input { @apply w-full rounded-xl border border-white/10 bg-ink-900/80 px-3.5 py-2.5 text-sm text-slate-100 placeholder-slate-500 outline-none focus:border-clear-400/60 focus:ring-2 focus:ring-clear-400/20; }
-  .select { @apply rounded-lg border border-white/10 bg-ink-900/80 px-2.5 py-1.5 text-xs text-slate-100 outline-none focus:border-clear-400/60 focus:ring-2 focus:ring-clear-400/20; }
-  .label { @apply text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500; }
-  .grad-text { @apply bg-gradient-to-r from-zra-sky via-cyan-300 to-clear-400 bg-clip-text text-transparent; }
+  .card { @apply rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04),0_8px_24px_-12px_rgba(15,23,42,.08)]; }
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed; }
+  .btn-primary { @apply btn bg-zra-navy text-white shadow-lg shadow-zra-navy/20 hover:bg-[#163574] hover:shadow-zra-navy/30; }
+  .btn-ghost { @apply btn border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50; }
+  .input { @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder-slate-400 outline-none focus:border-zra-sky focus:ring-4 focus:ring-zra-sky/15; }
+  .select { @apply rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-zra-sky focus:ring-2 focus:ring-zra-sky/15; }
+  .label { @apply text-xs font-semibold text-slate-500; }
+  .grad-text { @apply bg-gradient-to-r from-zra-navy to-zra-sky bg-clip-text text-transparent; }
 }
 
-.grid-bg {
-  background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
-                    linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
-  background-size: 44px 44px;
-  mask-image: radial-gradient(ellipse at 50% 30%, black 30%, transparent 75%);
-}
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,.08); border-radius: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(15,23,42,.12); border-radius: 10px; }
+
+/* scroll-reveal (landing page) */
+.reveal { opacity: 0; transform: translateY(28px); transition: opacity .8s ease, transform .8s cubic-bezier(.2,.7,.2,1); }
+.reveal.is-visible { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .reveal { opacity: 1; transform: none; }
+}

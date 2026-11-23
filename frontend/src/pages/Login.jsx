@@ -21,28 +21,35 @@ export default function Login() {
     } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4">
-      <div className="grid-bg pointer-events-none absolute inset-0" />
-      <div className="pointer-events-none absolute left-1/2 top-1/3 h-[480px] w-[720px] -translate-x-1/2 rounded-full bg-zra-navy/40 blur-[120px]" />
-      <div className="relative w-full max-w-md animate-fadeup">
-        <div className="mb-8 flex justify-center"><Link to="/"><CoBrand /></Link></div>
-        <form onSubmit={submit} className="card space-y-5 p-8">
-          <div>
-            <h1 className="font-display text-2xl font-bold text-white">Officer sign in</h1>
-            <p className="mt-1 text-sm text-slate-400">Access the SmartClear verification console.</p>
-          </div>
-          <div className="space-y-1.5"><label className="label">Username</label>
-            <input className="input" value={username} onChange={(e) => setU(e.target.value)} autoComplete="username" /></div>
-          <div className="space-y-1.5"><label className="label">Password</label>
-            <input className="input" type="password" value={password} onChange={(e) => setP(e.target.value)} autoComplete="current-password" /></div>
-          {err && <div className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-300 ring-1 ring-rose-400/20">{err}</div>}
-          <button className="btn-primary w-full py-3" disabled={busy}>{busy ? <Spinner /> : <>Sign in <ArrowRight size={16} /></>}</button>
-          <div className="flex items-start gap-2 rounded-lg bg-white/[0.03] p-3 text-xs text-slate-400">
-            <Lock size={14} className="mt-0.5 shrink-0 text-clear-400" />
-            <span>Pilot demo accounts: <b className="text-slate-200">officer</b> or <b className="text-slate-200">supervisor</b>, password <b className="text-slate-200">futureminds</b>.
-              Production would use ZRA single sign-on.</span>
-          </div>
-        </form>
+    <div className="grid min-h-screen bg-cream lg:grid-cols-2">
+      <div className="flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-md animate-fadeup">
+          <div className="mb-10"><Link to="/"><CoBrand /></Link></div>
+          <form onSubmit={submit} className="space-y-5">
+            <div>
+              <h1 className="font-display text-3xl font-bold text-slate-900">Welcome back</h1>
+              <p className="mt-2 text-slate-600">Sign in to check IDs and review cases.</p>
+            </div>
+            <div className="space-y-1.5"><label className="label">Username</label>
+              <input className="input py-3" value={username} onChange={(e) => setU(e.target.value)} autoComplete="username" /></div>
+            <div className="space-y-1.5"><label className="label">Password</label>
+              <input className="input py-3" type="password" value={password} onChange={(e) => setP(e.target.value)} autoComplete="current-password" /></div>
+            {err && <div className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-rose-200">{err}</div>}
+            <button className="btn-primary w-full py-3.5 text-base" disabled={busy}>{busy ? <Spinner /> : <>Sign in <ArrowRight size={18} /></>}</button>
+            <div className="flex items-start gap-2 rounded-xl bg-white p-3.5 text-sm text-slate-600 ring-1 ring-slate-200">
+              <Lock size={16} className="mt-0.5 shrink-0 text-zra-sky" />
+              <span>Demo accounts: <b className="text-slate-900">officer</b> or <b className="text-slate-900">supervisor</b>, password <b className="text-slate-900">futureminds</b>.</span>
+            </div>
+            <Link to="/" className="block text-center text-sm text-slate-500 hover:text-zra-navy">← Back to home</Link>
+          </form>
+        </div>
+      </div>
+      <div className="relative hidden p-4 lg:block">
+        <img src="/images/colleagues-laptop.jpg" alt="Two colleagues working together at a laptop" className="h-full w-full rounded-[2rem] object-cover" />
+        <div className="absolute inset-x-12 bottom-12 rounded-2xl bg-white/90 p-6 shadow-soft backdrop-blur">
+          <div className="font-display text-xl font-bold text-slate-900">Helping you help taxpayers.</div>
+          <p className="mt-1 text-sm text-slate-600">SmartClear reads the card and points out anything unusual. You make the call.</p>
+        </div>
       </div>
     </div>
   )

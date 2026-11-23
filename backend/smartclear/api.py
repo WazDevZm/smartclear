@@ -14,11 +14,12 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import db
-from .config import FRONTEND_DIST, MODELS_DIR, STORAGE_DIR
+from . import ai, db, moha_client, registry
+from .config import FRONTEND_DIST, MODELS_DIR, MOHA_API_URL, OPENROUTER_API_KEY, REGISTRY_DB_PATH, STORAGE_DIR
 from .document import prepare_document_pages
 from .pipeline import encode_png, process_pages
 from .verify import fmt_nrc
@@ -27,6 +28,8 @@ app = FastAPI(title="SmartClear API", version="0.1.0",
               description="ZRA SmartClear — AI-assisted NRC extraction, verification and fraud flagging.")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
                    allow_methods=["*"], allow_headers=["*"])
+# Sandbox Ministry of Home Affairs registry, served as a separate app with its own API key
+app.mount("/moha/api/v1", registry.moha_app)
 
 UPLOADS = STORAGE_DIR / "uploads"
 IMAGES = STORAGE_DIR / "images"
@@ -66,6 +69,9 @@ def current_user(authorization: str | None = Header(None)) -> dict:
 @app.on_event("startup")
 def _startup():
     db.init()
+    if not REGISTRY_DB_PATH.exists():
+        registry.seed()
+    registry.init()
 
 
 class Login(BaseModel):
@@ -88,7 +94,9 @@ def login(body: Login):
 def health():
     from .flags import tamper_model
 
-    return {"status": "ok", "tamper_model_loaded": tamper_model() is not None}
+    return {"status": "ok", "tamper_model_loaded": tamper_model() is not None,
+            "registry_transport": "http" if MOHA_API_URL else "in-process",
+            "ai_engine": "openrouter" if OPENROUTER_API_KEY else "rules-only"}
 
 
 @app.get("/api/public/metrics")
@@ -130,11 +138,17 @@ def stats(user=Depends(current_user)):
             " FROM cases GROUP BY day ORDER BY day DESC LIMIT 14"):
             weekly.append({"day": r["day"], "count": r["n"], "avg_ms": r["avg_ms"] or 0})
         weekly = list(reversed(weekly))
+        registry_rows = {r["o"] or "not_checked": r["n"] for r in c.execute(
+            "SELECT json_extract(result,'$.registry.outcome') o, COUNT(*) n FROM cases GROUP BY o")}
+        ai_rows = {r["o"]: r["n"] for r in c.execute(
+            "SELECT json_extract(result,'$.ai.source') o, COUNT(*) n FROM cases WHERE o IS NOT NULL GROUP BY o")}
         return {"total": q("SELECT COUNT(*) FROM cases"), "bands": bands, "status": status,
                 "taxpayers": q("SELECT COUNT(*) FROM taxpayers"),
                 "top_flags": sorted(flag_counts.items(), key=lambda kv: -kv[1])[:8],
                 "flag_total": sum(flag_counts.values()),
                 "outcome_counts": outcome_rows,
+                "registry_counts": registry_rows,
+                "ai_explanations": ai_rows,
                 "weekly": weekly,
                 "avg_processing_ms": round(avg_ms)}
 
@@ -240,6 +254,8 @@ def create_case(c, data: bytes, filename: str, tpin: str | None, actor: str, tok
                                               f"NRC {nrc} was already presented as {others[0]['full_name']} "
                                               f"(case {others[0]['ref']}).", "nrc_number"))
             result["risk"] = F.risk(result["flags"], result["verification"], result["tamper"])
+    # Verification flow: send the extracted applicant data to the MoHA ground-truth registry
+    moha_client.apply(result)
     ref = ref or f"SC-{uuid.uuid4().hex[:8].upper()}"
     img_path = IMAGES / f"{ref}.png"
     img_path.write_bytes(encode_png(disp))
@@ -255,8 +271,16 @@ def create_case(c, data: bytes, filename: str, tpin: str | None, actor: str, tok
          f["date_of_birth"]["value"], len(result["flags"]), json.dumps(result), str(img_path), str(src_path),
          db.now(), db.now()))
     db.audit(c, actor, "submit_document", cur.lastrowid,
-             {"filename": filename, "risk": result["risk"], "verification": result["verification"]["overall"]})
+             {"filename": filename, "risk": result["risk"], "verification": result["verification"]["overall"],
+              "registry": {"outcome": result["registry"].get("outcome"),
+                           "request_id": result["registry"].get("request_id")}})
     return cur.lastrowid
+
+
+def _create_case_tx(data: bytes, filename: str, tpin: str | None, actor: str) -> int:
+    # runs in a worker thread: OCR is CPU-bound and the registry call may go over HTTP to this same server
+    with db.conn() as c:
+        return create_case(c, data, filename, tpin, actor)
 
 
 @app.post("/api/cases")
@@ -265,13 +289,12 @@ async def upload(file: UploadFile = File(...), tpin: str | None = Form(None), us
     if len(data) > 15 * 1024 * 1024:
         raise HTTPException(413, "File too large (max 15 MB)")
     try:
-        with db.conn() as c:
-            cid = create_case(c, data, file.filename or "upload", tpin or None, user["username"])
+        cid = await run_in_threadpool(_create_case_tx, data, file.filename or "upload", tpin or None, user["username"])
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(422, f"Could not process document: {e}")
-    return get_case(cid, user)
+    return await run_in_threadpool(get_case, cid, user)
 
 
 @app.post("/api/batches")
@@ -280,25 +303,25 @@ async def batch_upload(files: list[UploadFile] = File(...), tpin: str | None = F
     if len(files) > 50:
         raise HTTPException(400, "Batch is limited to 50 documents")
     results = []
-    with db.conn() as c:
-        for f in files:
-            item = {"filename": f.filename or "unnamed"}
-            try:
-                data = await f.read()
-                if len(data) > 15 * 1024 * 1024:
-                    item["error"] = "File too large (max 15 MB)"
-                elif not data:
-                    item["error"] = "Empty file"
-                else:
-                    cid = create_case(c, data, item["filename"], tpin or None, user["username"])
+    for f in files:
+        item = {"filename": f.filename or "unnamed"}
+        try:
+            data = await f.read()
+            if len(data) > 15 * 1024 * 1024:
+                item["error"] = "File too large (max 15 MB)"
+            elif not data:
+                item["error"] = "Empty file"
+            else:
+                cid = await run_in_threadpool(_create_case_tx, data, item["filename"], tpin or None, user["username"])
+                with db.conn() as c:
                     r = c.execute("SELECT ref, risk_band, verification, n_flags, full_name, nrc_number "
                                   "FROM cases WHERE id=?", (cid,)).fetchone()
-                    item.update({"id": cid, "ref": r["ref"], "risk_band": r["risk_band"],
-                                 "verification": r["verification"], "n_flags": r["n_flags"],
-                                 "full_name": r["full_name"], "nrc_number": r["nrc_number"]})
-            except Exception as e:
-                item["error"] = f"Could not process document: {e}"
-            results.append(item)
+                item.update({"id": cid, "ref": r["ref"], "risk_band": r["risk_band"],
+                             "verification": r["verification"], "n_flags": r["n_flags"],
+                             "full_name": r["full_name"], "nrc_number": r["nrc_number"]})
+        except Exception as e:
+            item["error"] = f"Could not process document: {e}"
+        results.append(item)
     done = [r for r in results if r.get("id")]
     return {"processed": len(done), "failed": len(results) - len(done), "results": results}
 
@@ -318,11 +341,66 @@ def review(case_id: int, body: Review, user=Depends(current_user)):
     if body.action in ("reject", "escalate") and not (body.note or "").strip():
         raise HTTPException(400, "A note is required when rejecting or escalating")
     with db.conn() as c:
-        _get_case(c, case_id)
+        case = _get_case(c, case_id)
         c.execute("UPDATE cases SET status=?, decided_by=?, decision_note=?, updated_at=? WHERE id=?",
                   (STATUS[body.action], user["name"], body.note, db.now(), case_id))
-        db.audit(c, user["username"], f"review:{body.action}", case_id, {"note": body.note})
+        detail = {"note": body.note}
+        suggestion = (case["result"] or {}).get("ai")
+        if suggestion:
+            # human-in-the-loop record: what the assistant suggested vs what the officer decided
+            detail["ai_suggested"] = suggestion["suggested_action"]
+            detail["followed_ai"] = suggestion["suggested_action"] == body.action
+        db.audit(c, user["username"], f"review:{body.action}", case_id, detail)
     return get_case(case_id, user)
+
+
+def _save_result(c, case_id: int, result: dict):
+    c.execute("UPDATE cases SET result=?, risk_score=?, risk_band=?, n_flags=?, updated_at=? WHERE id=?",
+              (json.dumps(result), result["risk"]["score"], result["risk"]["band"], len(result["flags"]), db.now(),
+               case_id))
+
+
+@app.post("/api/cases/{case_id}/registry-check")
+def registry_check(case_id: int, user=Depends(current_user)):
+    """Re-send the case's extracted data to the MoHA registry (e.g. after it was unavailable)."""
+    with db.conn() as c:
+        case = _get_case(c, case_id)
+    result = moha_client.apply(case["result"])
+    result.pop("ai", None)     # the explanation depends on the registry answer: regenerate it
+    with db.conn() as c:
+        _save_result(c, case_id, result)
+        db.audit(c, user["username"], "registry_check", case_id,
+                 {"outcome": result["registry"].get("outcome"), "request_id": result["registry"].get("request_id")})
+    return get_case(case_id, user)
+
+
+@app.post("/api/cases/{case_id}/explain")
+def explain_case(case_id: int, refresh: bool = False, user=Depends(current_user)):
+    """AI explanation of the case's flags plus a suggested next step. Cached on the case; the officer decides."""
+    with db.conn() as c:
+        case = _get_case(c, case_id)
+    if case["result"].get("ai") and not refresh:
+        return case["result"]["ai"]
+    if "registry" not in case["result"]:
+        case["result"] = moha_client.apply(case["result"])
+    explanation = ai.explain(case)        # outside the DB transaction: the model call can take a while
+    case["result"]["ai"] = explanation
+    with db.conn() as c:
+        _save_result(c, case_id, case["result"])
+        db.audit(c, user["username"], "ai_explain", case_id,
+                 {"source": explanation["source"], "model": explanation["model"],
+                  "suggested_action": explanation["suggested_action"]})
+    return explanation
+
+
+@app.get("/api/registry/status")
+def registry_status(user=Depends(current_user)):
+    with registry.conn() as c:
+        by_status = {r[0]: r[1] for r in c.execute("SELECT status, COUNT(*) FROM citizens GROUP BY status")}
+        requests = {r[0]: r[1] for r in c.execute("SELECT outcome, COUNT(*) FROM requests GROUP BY outcome")}
+    return {"source": "Ministry of Home Affairs — National Registration (sandbox)",
+            "transport": "http" if MOHA_API_URL else "in-process", "endpoint": MOHA_API_URL or "/moha/api/v1",
+            "citizens": sum(by_status.values()), "by_status": by_status, "requests": requests}
 
 
 @app.get("/api/taxpayers")
@@ -339,7 +417,7 @@ def taxpayers(q: str | None = None, user=Depends(current_user)):
 @app.get("/api/evaluation")
 def evaluation(user=Depends(current_user)):
     out = {}
-    for name in ("evaluation.json", "tamper_metrics.json"):
+    for name in ("evaluation.json", "tamper_metrics.json", "registry_evaluation.json"):
         p = MODELS_DIR / name
         if p.exists():
             d = json.loads(p.read_text())
@@ -386,7 +464,7 @@ if FRONTEND_DIST.exists():
 
     @app.get("/{path:path}")
     def spa(path: str):
-        if path.startswith("api/"):
+        if path.startswith(("api/", "moha/")):
             return JSONResponse({"detail": "Not found"}, status_code=404)
         f = FRONTEND_DIST / path
         if path and f.is_file():

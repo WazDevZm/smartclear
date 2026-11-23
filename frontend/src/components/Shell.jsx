@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { Activity, BarChart3, Database, Layers, LayoutDashboard, ListChecks, LogOut, Menu, ScrollText, Upload, X } from 'lucide-react'
+import { BarChart3, Database, Layers, LayoutDashboard, ListChecks, LogOut, Menu, ScrollText, Upload, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api, session, setSession } from '../api'
 import { Logo } from './Logo'
@@ -83,9 +83,6 @@ export default function Shell() {
               </button>
             </div>
           )}
-        </div>
-        <div className="flex items-center gap-2 border-b border-slate-200 bg-amber-50 px-6 py-1.5 text-xs text-amber-800">
-          <Activity size={12} /> Practice mode: only made-up sample cards are used here. Warnings are hints to look closer, never a final decision.
         </div>
         <main className="mx-auto max-w-[1400px] px-4 py-8 sm:px-8"><Outlet /></main>
       </div>

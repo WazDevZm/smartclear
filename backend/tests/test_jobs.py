@@ -34,18 +34,21 @@ def test_jobs_are_private_to_their_owner():
     assert jobs.get(job["id"], "supervisor") is None
 
 
-def _client(monkeypatch, process):
+def _client(monkeypatch, process, tmp_path):
+    from smartclear import db
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "test.db")   # own database: works on a fresh checkout too
+    db.init()
     monkeypatch.setattr(api, "_process_item", process)
     c = TestClient(api.app)
     token = c.post("/api/login", json={"username": "officer", "password": "futureminds"}).json()["token"]
     return c, {"Authorization": f"Bearer {token}"}
 
 
-def test_background_upload_returns_immediately_then_completes(monkeypatch):
+def test_background_upload_returns_immediately_then_completes(monkeypatch, tmp_path):
     def slow(data, name, tpin, actor):
         time.sleep(0.3)        # stands in for OCR that would outlast a proxy timeout
         return {"filename": name, "id": 42, "ref": "SC-TEST"}
-    c, h = _client(monkeypatch, slow)
+    c, h = _client(monkeypatch, slow, tmp_path)
     t0 = time.time()
     r = c.post("/api/cases", files={"file": ("card.pdf", b"%PDF-1.4")}, data={"background": "true"}, headers=h)
     assert r.status_code == 202 and time.time() - t0 < 0.3
@@ -56,8 +59,8 @@ def test_background_upload_returns_immediately_then_completes(monkeypatch):
     assert j["status"] == "done" and j["results"][0]["id"] == 42
 
 
-def test_background_upload_failure_is_reported_on_the_job(monkeypatch):
-    c, h = _client(monkeypatch, lambda data, name, tpin, actor: {"filename": name, "error": "Could not process document: bad pdf"})
+def test_background_upload_failure_is_reported_on_the_job(monkeypatch, tmp_path):
+    c, h = _client(monkeypatch, lambda data, name, tpin, actor: {"filename": name, "error": "Could not process document: bad pdf"}, tmp_path)
     job_id = c.post("/api/cases", files={"file": ("x.pdf", b"x")}, data={"background": "true"}, headers=h).json()["id"]
     end = time.time() + 5
     while (j := c.get(f"/api/jobs/{job_id}", headers=h).json())["status"] not in ("done", "error") and time.time() < end:
@@ -65,8 +68,8 @@ def test_background_upload_failure_is_reported_on_the_job(monkeypatch):
     assert j["status"] == "error" and "bad pdf" in j["error"]
 
 
-def test_background_batch_tracks_each_document(monkeypatch):
-    c, h = _client(monkeypatch, lambda data, name, tpin, actor: {"filename": name, "id": 1})
+def test_background_batch_tracks_each_document(monkeypatch, tmp_path):
+    c, h = _client(monkeypatch, lambda data, name, tpin, actor: {"filename": name, "id": 1}, tmp_path)
     files = [("files", (f"c{i}.pdf", b"%PDF")) for i in range(3)]
     r = c.post("/api/batches", files=files, data={"background": "true"}, headers=h)
     assert r.status_code == 202 and r.json()["total"] == 3
@@ -76,8 +79,8 @@ def test_background_batch_tracks_each_document(monkeypatch):
     assert j["done"] == 3
 
 
-def test_unknown_job_is_404(monkeypatch):
-    c, h = _client(monkeypatch, lambda *a: {})
+def test_unknown_job_is_404(monkeypatch, tmp_path):
+    c, h = _client(monkeypatch, lambda *a: {}, tmp_path)
     assert c.get("/api/jobs/nope", headers=h).status_code == 404
 
 

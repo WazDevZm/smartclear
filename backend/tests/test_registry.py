@@ -60,3 +60,23 @@ def test_http_api_requires_key():
     assert client.post("/verify", json={}).status_code == 401
     ok = client.post("/verify", json={"nrc_number": "882007/53/1"}, headers={"X-API-Key": registry.MOHA_API_KEY})
     assert ok.status_code == 200 and ok.json()["found"]
+
+
+def test_supabase_backend_reads_nrc_bank(monkeypatch):
+    from smartclear import supabase_store
+    bank = {"882007/53/1": {"nrc_number": "882007/53/1", "card_number": "Z65535111",
+                            "full_name": "NCHIMUNYA SINKALA MBEWE", "date_of_birth": "1999-06-12", "sex": "F",
+                            "place_of_birth_district": "LIVINGSTONE", "district": "LIVINGSTONE",
+                            "registration_date": "2025-08-14", "status": "active", "updated_at": None}}
+    calls = []
+
+    def fake_request(method, path, body=None, prefer=None):
+        calls.append((method, path))
+        nrc = path.split("nrc_number=eq.")[-1].split("&")[0].replace("%2F", "/")
+        return [bank[nrc]] if nrc in bank else []
+
+    monkeypatch.setattr(registry, "REGISTRY_BACKEND", "supabase")
+    monkeypatch.setattr(supabase_store, "_request", fake_request)
+    assert check(nrc_number="882007/53/1", full_name="Nchimunya Sinkala Mbewe", date_of_birth="12.06.99")["outcome"] == "match"
+    assert check(nrc_number="123456/78/9", full_name="X Y")["outcome"] == "not_found"
+    assert all(m == "GET" for m, _ in calls) and all("mohais_citizens" in p for _, p in calls)

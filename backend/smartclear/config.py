@@ -52,6 +52,11 @@ OCR_LOW_CONFIDENCE = 0.80
 MOHA_API_URL = os.environ.get("MOHA_API_URL", "").rstrip("/")
 MOHA_API_KEY = os.environ.get("MOHA_API_KEY", "moha-sandbox-key-change-me")
 MOHA_TIMEOUT_S = float(os.environ.get("MOHA_TIMEOUT_S", "8"))
+# Where the registry's NRC bank lives: "sqlite" (local copy, default) or "supabase" (mohais_citizens table).
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
+SUPABASE_TIMEOUT_S = float(os.environ.get("SUPABASE_TIMEOUT_S", "8"))
+REGISTRY_BACKEND = os.environ.get("REGISTRY_BACKEND", "sqlite").lower()
 
 # AI explanation layer (OpenRouter, OpenAI-compatible). Without a key, a deterministic rule-based explainer is used.
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")

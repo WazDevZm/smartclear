@@ -28,7 +28,8 @@ from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from . import gazetteer
-from .config import GROUND_TRUTH_CSV, MOHA_API_KEY, REGISTRY_DB_PATH, TAXPAYER_RECORDS_CSV
+from . import supabase_store
+from .config import GROUND_TRUTH_CSV, MOHA_API_KEY, REGISTRY_BACKEND, REGISTRY_DB_PATH, TAXPAYER_RECORDS_CSV
 from .verify import compare_names, fmt_nrc, norm_nrc, norm_name, parse_date
 
 SCHEMA = """
@@ -122,9 +123,21 @@ def seed() -> int:
     return len(rows)
 
 
+def backend() -> str:
+    return "supabase" if REGISTRY_BACKEND == "supabase" else "sqlite"
+
+
+def citizen_rows() -> list[dict]:
+    """Every citizen in the local register (the source the Supabase NRC bank is loaded from)."""
+    with conn() as c:
+        return [dict(r) for r in c.execute("SELECT * FROM citizens")]
+
+
 def _citizen(c, nrc: str | None) -> dict | None:
     if not nrc:
         return None
+    if backend() == "supabase":
+        return supabase_store.get_by_nrc(fmt_nrc(nrc))
     r = c.execute("SELECT * FROM citizens WHERE nrc_number=?", (fmt_nrc(nrc),)).fetchone()
     return dict(r) if r else None
 
@@ -134,7 +147,9 @@ def _find_by_name_dob(c, name: str | None, dob: str | None) -> dict | None:
     d = _iso(dob)
     if not (name and d):
         return None
-    for r in c.execute("SELECT * FROM citizens WHERE date_of_birth=?", (d,)):
+    rows = supabase_store.by_date_of_birth(d) if backend() == "supabase" else \
+        c.execute("SELECT * FROM citizens WHERE date_of_birth=?", (d,))
+    for r in rows:
         if compare_names(name, r["full_name"])["outcome"] == "match":
             return dict(r)
     return None
@@ -194,7 +209,8 @@ def verify_identity(payload: dict, client: str = "unknown") -> dict:
             result = {"request_id": request_id, "found": True, "matched_by": matched_by, "outcome": outcome,
                       "status": cit["status"], "status_message": STATUSES.get(cit["status"], ""),
                       "status_note": cit["status_note"], "checks": checks,
-                      "registered_district": cit["district"], "registration_date": cit["registration_date"]}
+                      "registered_district": cit["district"], "registration_date": cit["registration_date"],
+                      "register_backend": backend()}
         c.execute("INSERT INTO requests VALUES (?,?,?,?,?)",
                   (request_id, time.time(), client, fmt_nrc(payload.get("nrc_number")), outcome))
     return result

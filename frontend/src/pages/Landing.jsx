@@ -1,204 +1,306 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ArrowRight, BadgeCheck, Eye, FileScan, Fingerprint, GitCompareArrows, Lock, ScanLine, ShieldAlert,
-  Sparkles, UserCheck, Zap,
+  ArrowRight, BadgeCheck, ChevronDown, Clock, CreditCard, HeartHandshake, Lock, Search, ShieldCheck, Smile,
+  UserCheck, Users,
 } from 'lucide-react'
-import { CoBrand, Logo, LogoMark } from '../components/Logo'
+import { CoBrand, Logo } from '../components/Logo'
 
-function HeroCard() {
-  const rows = [
-    ['NRC No.', '783849/52/1', 'match'],
-    ['Full name', 'PRECIOUS MWEEMBA CHISENGA', 'match'],
-    ['Date of birth', '08.04.2006', 'match'],
-    ['District', 'KABWE ≠ MONZE (code 52)', 'flag'],
-  ]
+const pillars = [
+  { Icon: Clock, t: 'Faster service', d: 'Your card is checked in about a second, so you spend less time waiting at the counter.' },
+  { Icon: ShieldCheck, t: 'Protects your identity', d: 'It helps stop anyone from registering for tax using your name or a fake card.' },
+  { Icon: UserCheck, t: 'A person always decides', d: 'SmartClear only helps. A trained ZRA officer makes every final decision.' },
+  { Icon: Lock, t: 'Your details stay private', d: 'Your name, NRC number and date of birth stay on government systems and are never sent to outside companies.' },
+]
+
+const steps = [
+  { Icon: CreditCard, t: 'Show your NRC', d: 'At registration, the officer scans your National Registration Card, just as they do today.' },
+  { Icon: Search, t: 'SmartClear checks it', d: 'In about a second it reads your name, NRC number and date of birth, and compares them with what you filled in.' },
+  { Icon: BadgeCheck, t: 'The officer confirms', d: 'If everything matches, you’re on your way. If something looks off, the officer takes a closer look with you.' },
+]
+
+const people = [
+  { img: '/images/person-woman.jpg', t: 'Taxpayers', d: 'Register quickly and know that nobody else can sign up in your name.' },
+  { img: '/images/person-man.jpg', t: 'Small business owners', d: 'Get your TPIN sorted with fewer trips back and forth.' },
+  { img: '/images/person-woman3.jpg', t: 'ZRA officers', d: 'Spend less time squinting at faded cards and more time helping people.' },
+]
+
+const faqs = [
+  ['Does a computer decide if I can register?', 'No. SmartClear only points out things worth a second look. A ZRA officer always looks at your case and makes the decision, and nothing on your record is ever changed automatically.'],
+  ['What happens to the scan of my NRC?', 'It stays on ZRA’s own systems. Your details are checked against the national register at the Ministry of Home Affairs, and are never sent to any outside company. Every time someone views or acts on a case it is written down for accountability.'],
+  ['My card is old or faded. Will that be a problem?', 'No. If part of the card is hard to read, SmartClear says so instead of guessing, and the officer simply checks that part by eye.'],
+  ['What if SmartClear flags my card by mistake?', 'A flag just means “please check this”. It is not an accusation. The officer looks at the card with you and can approve it straight away.'],
+  ['Is this being used at ZRA offices today?', 'Not yet. SmartClear is a pilot being tested with practice cards by the ZRA AI Unit. It will only be used with real cards inside ZRA’s secure environment.'],
+]
+
+/** Fades children in when they scroll into view. */
+function Reveal({ children, className = '', delay = 0, as: Tag = 'div' }) {
+  const ref = useRef(null)
+  const [shown, setShown] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !('IntersectionObserver' in window)) { setShown(true); return }
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setShown(true); io.disconnect() } },
+      { threshold: 0.15, rootMargin: '0px 0px -40px 0px' })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+  return <Tag ref={ref} className={`reveal ${shown ? 'is-visible' : ''} ${className}`} style={{ transitionDelay: `${delay}ms` }}>{children}</Tag>
+}
+
+/** Counts up to a number once visible ("99%", "~1s"). */
+function CountUp({ value }) {
+  const m = /^(\D*)(\d+(?:\.\d+)?)(.*)$/.exec(value || '')
+  const ref = useRef(null)
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    if (!m) return
+    const target = parseFloat(m[2])
+    let raf, start
+    const io = new IntersectionObserver(([e]) => {
+      if (!e.isIntersecting) return
+      io.disconnect()
+      const tick = (t) => {
+        start ??= t
+        const k = Math.min(1, (t - start) / 1200)
+        setN(target * (1 - Math.pow(1 - k, 3)))
+        if (k < 1) raf = requestAnimationFrame(tick)
+      }
+      raf = requestAnimationFrame(tick)
+    })
+    ref.current && io.observe(ref.current)
+    return () => { io.disconnect(); cancelAnimationFrame(raf) }
+  }, [value]) // eslint-disable-line react-hooks/exhaustive-deps
+  if (!m) return <span>{value}</span>
+  const decimals = m[2].includes('.') ? 1 : 0
+  return <span ref={ref}>{m[1]}{n.toFixed(decimals)}{m[3]}</span>
+}
+
+function Faq({ q, a }) {
+  const [open, setOpen] = useState(false)
   return (
-    <div className="relative mx-auto w-full max-w-[520px] animate-float">
-      <div className="absolute -inset-6 rounded-[2rem] bg-gradient-to-br from-zra-sky/30 via-clear-400/20 to-transparent blur-3xl" />
-      <div className="card relative overflow-hidden p-5 shadow-2xl shadow-black/50">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
-            <ScanLine size={14} className="text-clear-400" /> SC-0101 · nrc-syn-0101.pdf
-          </div>
-          <span className="rounded-full bg-rose-500/10 px-2.5 py-1 text-[11px] font-semibold text-rose-300 ring-1 ring-rose-400/25">
-            High risk · 70
-          </span>
-        </div>
-        {/* stylised NRC */}
-        <div className="relative overflow-hidden rounded-xl border border-white/10 bg-gradient-to-br from-[#f3ead9] to-[#e9dcc4] p-4 text-[#2a2a2a]">
-          <div className="flex items-start justify-between">
-            <div className="text-[9px] font-bold leading-tight tracking-wide">REPUBLIC OF ZAMBIA<br />
-              <span className="text-[15px] font-black tracking-tight">NATIONAL REGISTRATION CARD</span></div>
-            <div className="font-mono text-[13px] font-semibold">Z 88234889</div>
-          </div>
-          <div className="mt-3 grid grid-cols-3 gap-y-2 font-mono text-[11px]">
-            <div className="col-span-3"><span className="block text-[7px] font-sans font-bold text-[#777]">FULL NAME</span>
-              <span className="rounded bg-emerald-500/20 px-1 ring-1 ring-emerald-600/40">PRECIOUS MWEEMBA CHISENGA</span></div>
-            <div><span className="block text-[7px] font-sans font-bold text-[#777]">DATE OF BIRTH</span>
-              <span className="rounded bg-emerald-500/20 px-1 ring-1 ring-emerald-600/40">08.04.06</span></div>
-            <div><span className="block text-[7px] font-sans font-bold text-[#777]">PLACE OF BIRTH</span>NANSANGA D.MONZE</div>
-            <div className="text-right"><span className="block text-[7px] font-sans font-bold text-[#777]">SEX</span>F</div>
-            <div className="col-span-2"><span className="block text-[7px] font-sans font-bold text-[#777]">VILLAGE</span>NANSANGA</div>
-            <div className="text-right"><span className="block text-[7px] font-sans font-bold text-[#777]">DISTRICT</span>
-              <span className="rounded bg-rose-500/20 px-1 ring-1 ring-rose-600/50">KABWE</span></div>
-          </div>
-          <div className="pointer-events-none absolute inset-x-0 top-0 h-full">
-            <div className="h-16 w-full animate-scan bg-gradient-to-b from-transparent via-cyan-400/30 to-transparent" />
-          </div>
-        </div>
-        <div className="mt-4 space-y-2">
-          {rows.map(([k, v, s], i) => (
-            <div key={k} className="flex items-center justify-between rounded-lg bg-white/[0.03] px-3 py-2 text-xs animate-fadeup"
-              style={{ animationDelay: `${0.3 + i * 0.15}s` }}>
-              <span className="text-slate-500">{k}</span>
-              <span className="flex items-center gap-2 font-mono text-slate-200">{v}
-                {s === 'match' ? <BadgeCheck size={14} className="text-emerald-400" /> : <ShieldAlert size={14} className="text-rose-400" />}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
+    <div className="border-b border-slate-200 last:border-0">
+      <button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-4 py-5 text-left" aria-expanded={open}>
+        <span className="text-base font-semibold text-slate-900">{q}</span>
+        <ChevronDown size={20} className={`shrink-0 text-slate-400 transition ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && <p className="-mt-1 pb-5 pr-8 leading-relaxed text-slate-600">{a}</p>}
     </div>
   )
 }
 
-const steps = [
-  { Icon: FileScan, t: 'Scanned NRC', d: 'Officer uploads the PDF or image presented at registration.' },
-  { Icon: Sparkles, t: 'AI/OCR extraction', d: 'Deep-learning OCR reads NRC number, name and date of birth in about a second, with confidence for every field.' },
-  { Icon: GitCompareArrows, t: 'Record verification', d: 'Exact match on NRC and DOB, smart name matching that tolerates order, case and a missing middle name.' },
-  { Icon: ShieldAlert, t: 'Anomaly & fraud flags', d: 'Explainable rules plus a trained tamper detector catch altered digits, swapped fonts and erasures.' },
-  { Icon: UserCheck, t: 'Officer decision', d: 'Evidence on one screen. The officer approves, rejects or escalates, and every action is audited.' },
-]
-
-const features = [
-  { Icon: Fingerprint, t: 'Field-level tamper detection', d: 'A model trained on synthetic forgeries spots correction patches, spliced digits, substituted surnames and blurred fields. It shows the reason, not just a score.' },
-  { Icon: Eye, t: 'Explainable by design', d: 'Every flag says what was found and where: the NRC district code that doesn’t match, the age at registration, the character in a different ink.' },
-  { Icon: Lock, t: 'Privacy-first', d: 'Developed entirely on synthetic NRCs. It runs on-premise in ZRA’s sandbox, with no cloud OCR and no data leaving the network.' },
-  { Icon: Zap, t: 'Built for the counter', d: 'About a second per document on a laptop CPU. A risk-sorted queue puts the cases that matter first.' },
-]
-
 export default function Landing() {
   const [m, setM] = useState(null)
   useEffect(() => { fetch('/api/public/metrics').then((r) => r.json()).then(setM).catch(() => {}) }, [])
-  const pct = (v) => (v === undefined ? '—' : `${Math.round(v * 1000) / 10}%`)
+  const pct = (v) => (v === undefined ? '—' : `${Math.round(v * 100)}%`)
+  const [scrolled, setScrolled] = useState(false)
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 24)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
   return (
-    <div className="relative min-h-screen overflow-hidden bg-ink-950">
-      <div className="grid-bg pointer-events-none absolute inset-0" />
-      <div className="pointer-events-none absolute -top-40 left-1/2 h-[600px] w-[900px] -translate-x-1/2 rounded-full bg-zra-navy/40 blur-[140px]" />
-
-      <header className="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-4 py-5 sm:px-6">
-        <CoBrand size={34} />
-        <nav className="hidden items-center gap-8 text-sm text-slate-400 md:flex">
-          <a href="#how" className="hover:text-white">How it works</a>
-          <a href="#features" className="hover:text-white">Capabilities</a>
-          <a href="#results" className="hover:text-white">Results</a>
-        </nav>
-        <Link to="/login" className="btn-ghost">Officer sign in <ArrowRight size={15} /></Link>
+    <div id="top" className="min-h-screen bg-cream text-slate-700">
+      <header className="fixed inset-x-0 top-0 z-30 px-3 pt-3 sm:px-6 sm:pt-4">
+        <div className={`mx-auto flex items-center justify-between rounded-full border bg-white/80 pl-4 pr-2 backdrop-blur-xl transition-all duration-500 sm:pl-5 ${
+          scrolled ? 'max-w-5xl border-slate-200/80 py-1.5 shadow-[0_12px_40px_-12px_rgba(15,23,42,.25)]' : 'max-w-7xl border-white/60 py-2.5 shadow-[0_8px_30px_-16px_rgba(15,23,42,.18)]'}`}>
+          <a href="#top" aria-label="SmartClear home"><CoBrand size={scrolled ? 30 : 34} /></a>
+          <nav className="hidden items-center gap-1 text-sm font-medium text-slate-600 md:flex">
+            {[['#how', 'How it works'], ['#who', 'Who it helps'], ['#faq', 'Questions']].map(([href, label]) => (
+              <a key={href} href={href} className="rounded-full px-4 py-2 transition hover:bg-slate-100 hover:text-zra-navy">{label}</a>
+            ))}
+          </nav>
+          <Link to="/login" className="btn-primary px-4 py-2">Staff sign in <ArrowRight size={15} /></Link>
+        </div>
       </header>
 
-      <section className="relative z-10 mx-auto grid max-w-7xl items-center gap-14 px-4 pb-24 pt-12 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pt-20">
-        <div className="animate-fadeup">
-          <div className="inline-flex items-center gap-2 rounded-full border border-zra-gold/30 bg-zra-gold/10 px-3 py-1 text-xs font-semibold text-[#E5C77A]">
-            <span className="h-1.5 w-1.5 rounded-full bg-zra-gold" /> Zambia Revenue Authority · AI Unit pilot
+      {/* Hero */}
+      <section className="relative overflow-hidden">
+        <div className="pointer-events-none absolute -right-40 -top-40 h-[520px] w-[520px] animate-drift rounded-full bg-zra-sky/15 blur-3xl" />
+        <div className="pointer-events-none absolute -left-32 top-40 h-[380px] w-[380px] animate-drift rounded-full bg-zra-gold/15 blur-3xl [animation-delay:-7s]" />
+        <div className="relative mx-auto grid max-w-7xl items-center gap-12 px-4 pb-20 pt-32 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pt-40">
+          <div className="animate-fadeup">
+            <h1 className="font-display text-[2.6rem] font-extrabold leading-[1.08] tracking-tight text-slate-900 sm:text-6xl">
+              Registering for tax,<br />
+              <span className="text-zra-navy">made quicker</span> and <span className="text-zra-sky">safer.</span>
+            </h1>
+            <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-600">
+              SmartClear helps ZRA officers check your National Registration Card (NRC) in seconds. Honest
+              taxpayers get through faster, and it’s much harder for anyone to register in your name.
+            </p>
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <a href="#how" className="btn-primary px-7 py-3.5 text-base">See how it works <ArrowRight size={18} /></a>
+              <a href="#faq" className="btn-ghost px-7 py-3.5 text-base">Common questions</a>
+            </div>
+            <div className="mt-10 flex items-center gap-4">
+              <div className="flex -space-x-3">
+                {['person-man.jpg', 'person-woman.jpg', 'person-man2.jpg', 'person-woman2.jpg'].map((f, i) => (
+                  <img key={f} src={`/images/${f}`} alt="" style={{ animationDelay: `${0.5 + i * 0.12}s` }}
+                    className="h-11 w-11 animate-popin rounded-full border-[3px] border-cream object-cover transition hover:z-10 hover:-translate-y-1" />
+                ))}
+              </div>
+              <p className="text-sm leading-snug text-slate-600"><b className="text-slate-900">Built for every Zambian taxpayer</b><br />from first-time earners to business owners</p>
+            </div>
           </div>
-          <p className="mt-4 font-display text-sm font-semibold italic tracking-wide text-[#E5C77A]">
-            My Tax, Your Tax, Our Destiny
-          </p>
-          <h1 className="mt-4 font-display text-5xl font-extrabold leading-[1.05] tracking-tight text-white sm:text-6xl">
-            Verify every NRC<br /><span className="grad-text">in seconds, not minutes.</span>
-          </h1>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-400">
-            SmartClear reads scanned National Registration Cards, checks them against captured taxpayer records,
-            and flags altered or inconsistent documents so registration officers can act at the counter.
-          </p>
-          <div className="mt-9 flex flex-wrap items-center gap-3">
-            <Link to="/login" className="btn-primary px-6 py-3 text-[15px]">Open the officer console <ArrowRight size={16} /></Link>
-            <a href="#how" className="btn-ghost px-6 py-3 text-[15px]">See how it works</a>
-          </div>
-          <div className="mt-12 grid max-w-lg grid-cols-3 gap-6 border-t border-white/[0.07] pt-8">
-            <div><div className="font-display text-3xl font-bold text-white">{pct(m?.extraction_accuracy)}</div><div className="mt-1 text-xs text-slate-500">key-field extraction</div></div>
-            <div><div className="font-display text-3xl font-bold text-white">{pct(m?.fraud_recall)}</div><div className="mt-1 text-xs text-slate-500">fraud cases flagged</div></div>
-            <div><div className="font-display text-3xl font-bold text-white">~{m?.median_seconds ?? '1'}s</div><div className="mt-1 text-xs text-slate-500">per document</div></div>
+
+          <div className="relative mx-auto w-full max-w-[520px] animate-popin [animation-delay:.15s]">
+            <div className="absolute inset-4 -rotate-3 animate-wiggle rounded-[2.5rem] bg-zra-sky/15" />
+            <img src="/images/hero-woman.jpg" alt="A smiling woman" className="relative aspect-[4/5] w-full rounded-[2.5rem] object-cover shadow-soft" />
+            <div className="absolute -left-4 top-10 flex items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-soft animate-float sm:-left-10">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><BadgeCheck size={22} /></span>
+              <div><div className="text-sm font-bold text-slate-900">ID checked</div><div className="text-xs text-slate-500">in about 1 second</div></div>
+            </div>
+            <div className="absolute -right-3 bottom-12 flex items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-soft animate-float [animation-delay:1.5s] sm:-right-8">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-100 text-zra-navy"><ShieldCheck size={22} /></span>
+              <div><div className="text-sm font-bold text-slate-900">Your details stay safe</div><div className="text-xs text-slate-500">on ZRA’s own systems</div></div>
+            </div>
           </div>
         </div>
-        <HeroCard />
       </section>
 
-      <section id="how" className="relative z-10 border-y border-white/[0.06] bg-ink-900/50 py-24">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="label text-clear-400">The workflow</div>
-          <h2 className="mt-3 max-w-2xl font-display text-4xl font-bold tracking-tight text-white">Extract → Verify → Flag → Review</h2>
-          <p className="mt-4 max-w-2xl text-slate-400">A human-in-the-loop pipeline. SmartClear supports the officer’s judgement and never replaces it: a flag means “look closer”, not “fraud”.</p>
-          <div className="mt-14 grid gap-4 md:grid-cols-5">
-            {steps.map(({ Icon, t, d }, i) => (
-              <div key={t} className="card group relative p-5 transition hover:border-clear-400/30 hover:bg-white/[0.05]">
-                <div className="mb-4 flex items-center justify-between">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-zra-sky/20 to-clear-400/20 text-clear-300 ring-1 ring-white/10">
-                    <Icon size={19} />
+      {/* Pillars */}
+      <section className="border-y border-slate-200/70 bg-white py-14">
+        <div className="mx-auto grid max-w-7xl gap-8 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
+          {pillars.map(({ Icon, t, d }, i) => (
+            <Reveal key={t} delay={i * 100} className="group flex gap-4">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-zra-navy/[0.07] text-zra-navy transition duration-300 group-hover:-translate-y-1 group-hover:bg-zra-navy group-hover:text-white"><Icon size={22} /></span>
+              <div><div className="font-semibold text-slate-900">{t}</div><p className="mt-1 text-sm leading-relaxed text-slate-600">{d}</p></div>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      {/* How it works */}
+      <section id="how" className="scroll-mt-20 py-24">
+        <div className="mx-auto grid max-w-7xl items-center gap-14 px-4 sm:px-6 lg:grid-cols-2">
+          <Reveal className="relative order-2 lg:order-1">
+            <div className="overflow-hidden rounded-[2rem] shadow-soft">
+              <img src="/images/counter-help.jpg" alt="An officer helping a member of the public at a desk" className="aspect-[5/4] w-full object-cover transition duration-700 hover:scale-105" />
+            </div>
+            <div className="absolute -bottom-6 right-6 rounded-2xl bg-zra-navy px-5 py-4 text-white shadow-soft">
+              <div className="font-display text-3xl font-extrabold">3 steps</div>
+              <div className="text-sm text-white/75">and you’re done</div>
+            </div>
+          </Reveal>
+          <Reveal delay={120} className="order-1 lg:order-2">
+            <div className="text-sm font-semibold text-zra-sky">How it works</div>
+            <h2 className="mt-2 font-display text-4xl font-bold tracking-tight text-slate-900">Nothing changes for you, it just gets faster.</h2>
+            <p className="mt-4 text-lg text-slate-600">You register the same way you always have. SmartClear works quietly in the background to help the officer.</p>
+            <ol className="mt-10 space-y-6">
+              {steps.map(({ Icon, t, d }, i) => (
+                <Reveal as="li" key={t} delay={200 + i * 150} className="flex gap-5">
+                  <div className="relative flex flex-col items-center">
+                    <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-zra-navy shadow-md ring-1 ring-slate-200"><Icon size={22} /></span>
+                    {i < steps.length - 1 && <span className="mt-2 w-px flex-1 bg-slate-200" />}
                   </div>
-                  <span className="font-mono text-xs text-slate-600">0{i + 1}</span>
+                  <div className="pb-2">
+                    <div className="text-xs font-bold text-zra-sky">Step {i + 1}</div>
+                    <div className="mt-0.5 text-lg font-semibold text-slate-900">{t}</div>
+                    <p className="mt-1 leading-relaxed text-slate-600">{d}</p>
+                  </div>
+                </Reveal>
+              ))}
+            </ol>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* Protects you */}
+      <section className="bg-white py-24">
+        <div className="mx-auto grid max-w-7xl items-center gap-14 px-4 sm:px-6 lg:grid-cols-2">
+          <Reveal>
+            <div className="text-sm font-semibold text-zra-sky">Why it matters</div>
+            <h2 className="mt-2 font-display text-4xl font-bold tracking-tight text-slate-900">Stopping people from pretending to be you.</h2>
+            <p className="mt-4 text-lg leading-relaxed text-slate-600">
+              Sometimes people try to register using someone else’s details or a card that has been changed.
+              These are hard to spot by eye, especially on a busy day. SmartClear notices small things, like a
+              number in a different ink or a date that doesn’t add up, and asks the officer to take a second look.
+            </p>
+            <div className="mt-8 grid gap-4 sm:grid-cols-3">
+              {[[pct(m?.extraction_accuracy), 'of practice cards read correctly'],
+                [pct(m?.fraud_recall), 'of fake practice cards spotted'],
+                [`~${m?.median_seconds ?? 1}s`, 'to check each card']].map(([v, l]) => (
+                <div key={l} className="rounded-2xl bg-cream p-5 ring-1 ring-slate-200/70 transition hover:-translate-y-1 hover:shadow-soft">
+                  <div className="font-display text-3xl font-extrabold text-zra-navy"><CountUp value={v} /></div>
+                  <div className="mt-1 text-sm text-slate-600">{l}</div>
                 </div>
-                <div className="font-semibold text-white">{t}</div>
-                <p className="mt-2 text-sm leading-relaxed text-slate-400">{d}</p>
-              </div>
+              ))}
+            </div>
+            <p className="mt-4 text-xs text-slate-500">Results from testing on {m?.documents ?? 100} practice (made-up) cards. Real-world results will be measured during the pilot.</p>
+          </Reveal>
+          <Reveal delay={150} className="relative">
+            <div className="overflow-hidden rounded-[2rem] shadow-soft">
+              <img src="/images/conversation.jpg" alt="Two women talking and smiling" className="aspect-[4/3] w-full object-cover transition duration-700 hover:scale-105" />
+            </div>
+            <div className="absolute -left-4 -top-6 flex animate-float items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-soft sm:-left-8">
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-600"><HeartHandshake size={22} /></span>
+              <div className="text-sm font-bold text-slate-900">Trust, on both sides<br /><span className="font-normal text-slate-500">of the counter</span></div>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* Who it helps */}
+      <section id="who" className="scroll-mt-20 py-24">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6">
+          <Reveal className="mx-auto max-w-2xl text-center">
+            <div className="text-sm font-semibold text-zra-sky">Who it helps</div>
+            <h2 className="mt-2 font-display text-4xl font-bold tracking-tight text-slate-900">Good for everyone in the queue.</h2>
+          </Reveal>
+          <div className="mt-12 grid gap-6 md:grid-cols-3">
+            {people.map(({ img, t, d }, i) => (
+              <Reveal key={t} delay={i * 130} className="card group overflow-hidden p-0 transition duration-300 hover:-translate-y-2 hover:shadow-soft">
+                <div className="overflow-hidden"><img src={img} alt="" className="aspect-[4/3] w-full object-cover object-top transition duration-700 group-hover:scale-105" /></div>
+                <div className="p-6">
+                  <div className="text-lg font-semibold text-slate-900">{t}</div>
+                  <p className="mt-2 leading-relaxed text-slate-600">{d}</p>
+                </div>
+              </Reveal>
             ))}
           </div>
         </div>
       </section>
 
-      <section id="features" className="relative z-10 py-24">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="grid gap-12 lg:grid-cols-[1fr_1.4fr]">
-            <div>
-              <div className="label text-clear-400">Capabilities</div>
-              <h2 className="mt-3 font-display text-4xl font-bold tracking-tight text-white">Catches what the eye misses.</h2>
-              <p className="mt-4 text-slate-400">Manual checks are slow and inconsistent, and they can’t reliably spot a digitally altered document. SmartClear checks every card, every time, the same way.</p>
-              <div className="mt-8 flex items-center gap-3 text-sm text-slate-500"><LogoMark size={28} /> Built for ZRA’s Taxpayer Services & Education and Domestic Taxes Division.</div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {features.map(({ Icon, t, d }) => (
-                <div key={t} className="card p-6">
-                  <Icon size={22} className="text-clear-400" />
-                  <div className="mt-4 font-semibold text-white">{t}</div>
-                  <p className="mt-2 text-sm leading-relaxed text-slate-400">{d}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* FAQ */}
+      <section id="faq" className="scroll-mt-20 bg-white py-24">
+        <div className="mx-auto grid max-w-6xl gap-12 px-4 sm:px-6 lg:grid-cols-[1fr_1.4fr]">
+          <Reveal>
+            <div className="text-sm font-semibold text-zra-sky">Questions</div>
+            <h2 className="mt-2 font-display text-4xl font-bold tracking-tight text-slate-900">Things people often ask.</h2>
+            <img src="/images/team-meeting.jpg" alt="Colleagues talking around a meeting table" className="mt-8 hidden aspect-[4/3] w-full rounded-[2rem] object-cover shadow-soft lg:block" />
+          </Reveal>
+          <Reveal delay={150} className="card px-6 sm:px-8">
+            {faqs.map(([q, a]) => <Faq key={q} q={q} a={a} />)}
+          </Reveal>
         </div>
       </section>
 
-      <section id="results" className="relative z-10 pb-24">
+      {/* CTA */}
+      <section className="py-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
-          <div className="card relative overflow-hidden p-8 sm:p-12">
-            <div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-clear-400/10 blur-3xl" />
-            <div className="label text-clear-400">Pilot results · synthetic NRC set ({m?.documents ?? 100} documents)</div>
-            <div className="mt-8 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-              {[['Extraction accuracy', pct(m?.extraction_accuracy), 'NRC no., name, DOB vs manual reading'],
-                ['Verification accuracy', pct(m?.verification_accuracy), 'match / review / mismatch vs expected'],
-                ['Fraud recall', pct(m?.fraud_recall), 'labelled fraudulent NRCs flagged'],
-                ['Flag precision', pct(m?.fraud_precision), 'flags that were real issues']].map(([a, b, c]) => (
-                <div key={a}>
-                  <div className="font-display text-4xl font-bold text-white">{b}</div>
-                  <div className="mt-2 text-sm font-medium text-slate-300">{a}</div>
-                  <div className="mt-1 text-xs text-slate-500">{c}</div>
-                </div>
-              ))}
+          <Reveal className="relative overflow-hidden rounded-[2rem] bg-zra-navy px-8 py-14 text-center text-white sm:px-14">
+            <div className="pointer-events-none absolute -right-20 -top-20 h-72 w-72 animate-drift rounded-full bg-zra-sky/30 blur-3xl" />
+            <div className="pointer-events-none absolute -bottom-24 -left-16 h-72 w-72 animate-drift rounded-full bg-zra-gold/20 blur-3xl [animation-delay:-6s]" />
+            <Smile size={36} className="relative mx-auto animate-wiggle text-zra-gold" />
+            <h2 className="mx-auto mt-4 max-w-2xl font-display text-3xl font-bold sm:text-4xl">Less waiting. More trust. Same friendly faces.</h2>
+            <p className="mx-auto mt-4 max-w-xl text-white/75">SmartClear is a pilot by the ZRA AI Unit to make registration smoother for every Zambian.</p>
+            <div className="mt-8 flex flex-wrap justify-center gap-3">
+              <a href="#how" className="btn bg-white px-7 py-3.5 text-base text-zra-navy hover:bg-slate-100">How it works</a>
+              <Link to="/login" className="btn border border-white/30 px-7 py-3.5 text-base text-white hover:bg-white/10"><Users size={18} /> ZRA staff sign in</Link>
             </div>
-            <p className="mt-8 max-w-3xl text-xs leading-relaxed text-slate-500">Measured on synthetic specimens. The tamper model is scored with document-grouped cross-validation, so no card is scored by a model that trained on it. Baselines against ZRA’s manual process will be established with real documents inside ZRA’s controlled sandbox.</p>
-          </div>
+          </Reveal>
         </div>
       </section>
 
-      <footer className="relative z-10 border-t border-white/[0.06] py-8">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 text-xs text-slate-500 sm:px-6">
-          <Logo size={26} />
+      <footer className="border-t border-slate-200 bg-white py-10">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-6 px-4 text-sm text-slate-500 sm:px-6">
+          <Logo size={30} />
           <span className="flex flex-col items-center gap-1 text-center">
-            <span className="font-semibold italic text-[#E5C77A]">My Tax, Your Tax, Our Destiny</span>
-            <span>A ZRA AI Unit pilot · AI for Public Good Challenge · Mukuba UniPod (CBU)</span>
+            <span className="font-semibold italic text-zra-gold">My Tax, Your Tax, Our Destiny</span>
+            <span className="text-xs">A ZRA AI Unit pilot · AI for Public Good Challenge · Mukuba UniPod (CBU)</span>
           </span>
-          <span>Prototype: not for production use</span>
+          <span className="text-xs">Pilot project: not yet in use at ZRA offices</span>
         </div>
       </footer>
     </div>

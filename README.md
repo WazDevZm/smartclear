@@ -132,7 +132,31 @@ Benign augmentations (JPEG, noise, brightness, defocus) are applied to both genu
 * **review**: 30–69
 * **high**: 70 and above
 
-### 4. Officer app: `frontend/` (React, Vite, Tailwind)
+### 4. Ground-truth check: Ministry of Home Affairs registry (`registry.py`, `moha_client.py`)
+* A sandbox stand-in for the national NRC register, in its own database (`storage/moha_registry.db`) and served as a
+  separate app at `/moha/api/v1` behind an `X-API-Key` (`POST /verify`, `GET /citizens/{nrc}`, `GET /stats`).
+* Every case sends its extracted NRC number, name, date of birth, sex, card number and district to `/verify` and gets
+  per-field match / mismatch results plus the card's status (active, reported lost, replaced, revoked, deceased).
+  Disagreements raise `REGISTRY_*` flags and the risk score. If the register can't be reached, the case is still
+  created with a "verify manually" warning.
+* `run.sh` sets `MOHA_API_URL`, so the server calls the registry over HTTP like an external service. Without it
+  (scripts, tests, Docker) the call is made in-process through the same contract.
+* Seeded from the facilitators' ground truth. For altered cards the register keeps the original identity.
+  `scripts/evaluate_registry.py` measures it (the **Model performance** page shows the result);
+  `scripts/registry_backfill.py` upgrades an existing database.
+
+### 5. AI assistant (`ai.py`)
+* Explains each case's results in plain language and suggests one next step (approve, ask for information,
+  escalate, reject), with questions the officer could ask the taxpayer.
+* **Human in the loop:** it only suggests. The officer decides, and the audit log records the suggestion and whether
+  the officer followed it.
+* **Privacy:** the model receives an anonymised summary (what differs and by how much, flag types, tamper reasons).
+  Names, NRC numbers and dates of birth are never sent.
+* Uses OpenRouter (`OPENROUTER_API_KEY` and a comma-separated `OPENROUTER_MODEL` fallback list in `.env`). Without
+  a key, or if every model fails, a rule-based explainer returns the same structure. API:
+  `POST /api/cases/{id}/explain` (`?refresh=true` to regenerate).
+
+### 6. Officer app: `frontend/` (React, Vite, Tailwind)
 * Landing page
 * Sign-in
 * Dashboard with SVG charts: verification outcomes donut, risk distribution, 14-day throughput, decisions funnel, flags breakdown

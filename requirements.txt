@@ -13,3 +13,4 @@ rapidocr-onnxruntime==1.4.4
 scikit-learn==1.9.1
 uvicorn[standard]==0.54.0
 pytest
+httpx

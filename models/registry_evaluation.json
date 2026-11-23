@@ -1,0 +1,40 @@
+{
+  "documents": 100,
+  "recall": 0.697,
+  "precision": 0.9583,
+  "tp": 23,
+  "fp": 1,
+  "fn": 10,
+  "tn": 66,
+  "by_fraud_type": {
+    "district_inconsistency": {
+      "caught": 11,
+      "total": 11
+    },
+    "visual_tamper": {
+      "caught": 12,
+      "total": 17
+    },
+    "underage_registration": {
+      "caught": 3,
+      "total": 8
+    }
+  },
+  "outcomes": {
+    "mismatch": 19,
+    "partial": 7,
+    "match": 70,
+    "not_found": 4
+  },
+  "false_alarms": [
+    {
+      "doc": "NRC-SYN-0102",
+      "outcome": "partial"
+    }
+  ],
+  "latency_ms": {
+    "median": 0.9,
+    "p90": 1.0
+  },
+  "note": "Registry check alone (high/medium registry flags), on the synthetic set. Underage registration is a property of a genuine registered card and is caught by the rules, not the registry."
+}

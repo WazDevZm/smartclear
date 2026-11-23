@@ -8,7 +8,7 @@ export function DonutChart({ segments, size = 164, thickness = 22, centerTop, ce
   let acc = 0
   return (
     <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} role="img" aria-label={segments.map(s => `${s.label}: ${s.value}`).join(', ')}>
-      <circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(255,255,255,0.055)" strokeWidth={thickness} fill="none" />
+      <circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(15,23,42,0.09)" strokeWidth={thickness} fill="none" />
       {total > 0 && segments.filter(s => s.value > 0).map((s, i) => {
         const frac = s.value / total
         const dash = Math.max(frac * circ - 2.5, 0.75)
@@ -22,7 +22,7 @@ export function DonutChart({ segments, size = 164, thickness = 22, centerTop, ce
           </circle>
         )
       })}
-      <text x={size / 2} y={size / 2 - 2} textAnchor="middle" dominantBaseline="middle" className="fill-white font-display font-bold" fontSize="26" fontWeight="800">{centerTop}</text>
+      <text x={size / 2} y={size / 2 - 2} textAnchor="middle" dominantBaseline="middle" className="fill-slate-900 font-display font-bold" fontSize="26" fontWeight="800">{centerTop}</text>
       <text x={size / 2} y={size / 2 + 17} textAnchor="middle" dominantBaseline="middle" className="fill-slate-500" fontSize="10.5" fontWeight="600">{centerBottom}</text>
     </svg>
   )
@@ -30,15 +30,15 @@ export function DonutChart({ segments, size = 164, thickness = 22, centerTop, ce
 
 /** Area + line chart for a daily series: data = [{ day, count }]. */
 export function AreaChart({ data, height = 150, stroke = '#2DD4BF' }) {
-  if (!data.length) return <div className="py-10 text-center text-xs text-slate-600">Not enough history yet</div>
+  if (!data.length) return <div className="py-10 text-center text-xs text-slate-400">Not enough history yet</div>
   const W = 560, H = height, padL = 6, padR = 6, padT = 12, padB = 22
   if (data.length === 1) {
     return (
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Daily volume">
-        <line x1={padL} x2={W - padR} y1={H / 2} y2={H / 2} stroke="rgba(255,255,255,0.09)" strokeDasharray="3 5" />
-        <circle cx={W / 2} cy={H / 2} r="5" fill="#0A1428" stroke={stroke} strokeWidth="2.2"><title>{data[0].day}: {data[0].count}</title></circle>
-        <text x={W / 2} y={H / 2 - 12} textAnchor="middle" fontSize="12" className="fill-slate-300" fontWeight="700">{data[0].count} docs on {data[0].day.slice(5)}</text>
-        <text x={W / 2} y={H - 6} textAnchor="middle" fontSize="9" className="fill-slate-600" fontWeight="600">history builds up as real documents are processed</text>
+        <line x1={padL} x2={W - padR} y1={H / 2} y2={H / 2} stroke="rgba(15,23,42,0.14)" strokeDasharray="3 5" />
+        <circle cx={W / 2} cy={H / 2} r="5" fill="#ffffff" stroke={stroke} strokeWidth="2.2"><title>{data[0].day}: {data[0].count}</title></circle>
+        <text x={W / 2} y={H / 2 - 12} textAnchor="middle" fontSize="12" className="fill-slate-700" fontWeight="700">{data[0].count} docs on {data[0].day.slice(5)}</text>
+        <text x={W / 2} y={H - 6} textAnchor="middle" fontSize="9" className="fill-slate-400" fontWeight="600">history builds up as real documents are processed</text>
       </svg>
     )
   }
@@ -59,18 +59,18 @@ export function AreaChart({ data, height = 150, stroke = '#2DD4BF' }) {
       </defs>
       {gridVals.map((v, i) => (
         <g key={i}>
-          <line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="rgba(255,255,255,0.05)" strokeDasharray="3 5" />
-          <text x={W - padR} y={y(v) - 2.5} textAnchor="end" fontSize="9" className="fill-slate-600" fontWeight="600">{v}</text>
+          <line x1={padL} x2={W - padR} y1={y(v)} y2={y(v)} stroke="rgba(15,23,42,0.08)" strokeDasharray="3 5" />
+          <text x={W - padR} y={y(v) - 2.5} textAnchor="end" fontSize="9" className="fill-slate-400" fontWeight="600">{v}</text>
         </g>
       ))}
       <path d={area} fill="url(#volFill)" />
       <path d={line} fill="none" stroke={stroke} strokeWidth="2.2" strokeLinejoin="round" strokeLinecap="round" />
       {pts.map(([px, py], i) => {
         const show = i === 0 || i === pts.length - 1 || i === Math.floor(pts.length / 2)
-        return show ? <circle key={i} cx={px} cy={py} r="3" fill="#0A1428" stroke={stroke} strokeWidth="1.6"><title>{data[i].day}: {data[i].count}</title></circle> : null
+        return show ? <circle key={i} cx={px} cy={py} r="3" fill="#ffffff" stroke={stroke} strokeWidth="1.6"><title>{data[i].day}: {data[i].count}</title></circle> : null
       })}
       {[[0, 'start'], [Math.floor(data.length / 2), 'middle'], [data.length - 1, 'end']].map(([i, anchor], k) => (
-        <text key={k} x={x(i)} y={H - 6} textAnchor={anchor} fontSize="9" className="fill-slate-600" fontWeight="600">{data[i].day.slice(5)}</text>
+        <text key={k} x={x(i)} y={H - 6} textAnchor={anchor} fontSize="9" className="fill-slate-400" fontWeight="600">{data[i].day.slice(5)}</text>
       ))}
     </svg>
   )
@@ -82,10 +82,10 @@ export function BarRow({ label, value, max, color = '#2DD4BF', right }) {
   return (
     <div>
       <div className="flex items-baseline justify-between gap-3 text-xs">
-        <span className="truncate text-slate-300">{label}</span>
+        <span className="truncate text-slate-700">{label}</span>
         <span className="shrink-0 font-mono text-slate-500">{right ?? value}</span>
       </div>
-      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/[0.05]">
+      <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
         <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
       </div>
     </div>

@@ -138,6 +138,8 @@ def main():
         w.writeheader()
         w.writerows(recs)
     print("scenarios:", Counter(r["scenario"].split(":")[0] for r in recs))
+    from smartclear import registry
+    print(f"MoHA registry: {registry.seed()} citizens")
 
     if DB_PATH.exists():
         DB_PATH.unlink()

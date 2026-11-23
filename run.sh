@@ -32,7 +32,19 @@ if [ ! -f storage/smartclear.db ] || [ "${1:-}" = "--retrain" ]; then
   .venv/bin/python backend/scripts/build_cache.py >/dev/null
   .venv/bin/python backend/scripts/seed.py
   .venv/bin/python backend/scripts/evaluate.py
+  .venv/bin/python backend/scripts/evaluate_registry.py >/dev/null
 fi
 
+# Existing databases from before the MoHA registry: seed it and check every case against it
+if [ ! -f storage/moha_registry.db ]; then
+  echo "▸ Seeding the Ministry of Home Affairs sandbox registry"
+  .venv/bin/python backend/scripts/registry_backfill.py
+  .venv/bin/python backend/scripts/evaluate_registry.py >/dev/null
+fi
+
+# The server sends extracted data to the registry over HTTP, as it would to the real MoHA service
+export MOHA_API_URL=${MOHA_API_URL:-http://127.0.0.1:8000/moha/api/v1}
+
 echo "▸ SmartClear running at http://localhost:8000  (login: officer / futureminds)"
+[ -f .env ] && grep -q "^OPENROUTER_API_KEY=." .env && echo "▸ AI assistant: OpenRouter" || echo "▸ AI assistant: built-in rules (set OPENROUTER_API_KEY in .env for AI explanations)"
 cd backend && exec ../.venv/bin/uvicorn smartclear.api:app --host 127.0.0.1 --port 8000

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   CheckCircle2, FileText, Files, Layers, Loader2, ScanLine, ShieldAlert, Trash2, XCircle,
 } from 'lucide-react'
-import { api } from '../api'
+import { api, waitForJob } from '../api'
 import { PageHeader } from '../components/ui'
 
 const bandCls = {
@@ -19,6 +19,7 @@ export default function Batch() {
   const [busy, setBusy] = useState(false)
   const [results, setResults] = useState(null)
   const [progress, setProgress] = useState(0)
+  const [doneCount, setDoneCount] = useState(0)
   const [err, setErr] = useState('')
   const input = useRef()
 
@@ -35,16 +36,17 @@ export default function Batch() {
 
   async function submit() {
     if (!files.length || busy) return
-    setBusy(true); setErr(''); setResults(null); setProgress(0)
-    // Chunk the upload so officers see progress; backend creates one case per document.
+    setBusy(true); setErr(''); setResults(null); setProgress(0); setDoneCount(0)
+    // Queued on the server (one case per document) and polled for real per-document progress.
     const fd = new FormData()
     files.forEach(f => fd.append('files', f))
     if (tpin) fd.append('tpin', tpin)
-    setProgress(30)
+    fd.append('background', 'true')
     try {
-      const res = await api('/batches', { method: 'POST', body: fd })
+      const job = await api('/batches', { method: 'POST', body: fd })
+      const done = await waitForJob(job.id, (j) => { setProgress(Math.round((j.done / Math.max(1, j.total)) * 100)); setDoneCount(j.done) })
       setProgress(100)
-      setResults(res.results)
+      setResults(done.results)
       setFiles([])
     } catch (e) {
       setErr(e.message)
@@ -98,7 +100,7 @@ export default function Batch() {
       {busy && (
         <div className="card mt-5 p-6 text-center">
           <Loader2 size={28} className="mx-auto animate-spin text-zra-sky" />
-          <div className="mt-3 font-semibold text-slate-900">Verifying {files.length} document{files.length === 1 ? '' : 's'}…</div>
+          <div className="mt-3 font-semibold text-slate-900">Checked {doneCount} of {files.length} document{files.length === 1 ? '' : 's'}…</div>
           <div className="mx-auto mt-4 h-2 max-w-md overflow-hidden rounded-full bg-slate-100">
             <div className="h-full rounded-full bg-gradient-to-r from-zra-sky to-clear-400 transition-all duration-500" style={{ width: `${progress}%` }} />
           </div>

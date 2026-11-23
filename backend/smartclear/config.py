@@ -78,9 +78,13 @@ REGISTRY_BACKEND = os.environ.get("REGISTRY_BACKEND", "sqlite").lower()
 
 # AI explanation layer (OpenRouter, OpenAI-compatible). Without a key, a deterministic rule-based explainer is used.
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+# Free models, fastest reliable first (benchmarked 2026-11-23 on a real case; see docs). Rate-limited ones fail fast.
 OPENROUTER_MODELS = [m.strip() for m in os.environ.get(
-    "OPENROUTER_MODEL", "nvidia/nemotron-3.5-super-vl:free,nvidia/nemotron-3.5-lightning:free,google/gemma-4-31b-it:free").split(",") if m.strip()]
-AI_TIMEOUT_S = float(os.environ.get("AI_TIMEOUT_S", "60"))
+    "OPENROUTER_MODEL", "particle-ai/particle-1:free,nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,dots-studio/dots-3-note-preview:free,nvidia/nemotron-3-ultra-550b-a55b:free,nvidia/nemotron-3.5-super-vl:free").split(",") if m.strip()]
+AI_TIMEOUT_S = float(os.environ.get("AI_TIMEOUT_S", "20"))      # per model attempt
+# Total time across all model attempts before the rule-based explainer answers instead. Keeps the request well
+# under hosting proxies' timeouts (which otherwise surface as 502/504).
+AI_BUDGET_S = float(os.environ.get("AI_BUDGET_S", "25"))
 
 for d in (STORAGE_DIR, MODELS_DIR, DATA_DIR):
     d.mkdir(parents=True, exist_ok=True)

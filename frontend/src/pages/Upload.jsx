@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CheckCircle2, FileUp, GitCompareArrows, ScanLine, ShieldAlert, Sparkles } from 'lucide-react'
-import { api } from '../api'
+import { api, waitForJob } from '../api'
 import { PageHeader } from '../components/ui'
 
 const stages = [
@@ -17,6 +17,7 @@ export default function Upload() {
   const [stage, setStage] = useState(0)
   const [err, setErr] = useState('')
   const [drag, setDrag] = useState(false)
+  const [queued, setQueued] = useState(0)
   const input = useRef()
   const navigate = useNavigate()
   useEffect(() => { api('/taxpayers').then(setRecords) }, [])
@@ -32,9 +33,12 @@ export default function Upload() {
     const fd = new FormData()
     fd.append('file', file)
     if (tpin) fd.append('tpin', tpin)
+    fd.append('background', 'true')
     try {
-      const c = await api('/cases', { method: 'POST', body: fd })
-      navigate(`/app/cases/${c.id}`)
+      // queued on the server and polled, so a slow read can never time out the request
+      const job = await api('/cases', { method: 'POST', body: fd })
+      const done = await waitForJob(job.id, (j) => setQueued(j.status === 'queued' ? j.position + 1 : 0))
+      navigate(`/app/cases/${done.results[0].id}`)
     } catch (e) { setErr(e.message); setBusy(false) }
   }
 
@@ -68,6 +72,7 @@ export default function Upload() {
 
         {busy ? (
           <div className="mt-8 space-y-3">
+            {queued > 0 && <div className="rounded-xl bg-sky-50 px-4 py-3 text-sm text-slate-600">Waiting for {queued} other card{queued === 1 ? '' : 's'} to finish first…</div>}
             {stages.map(([Icon, label], i) => (
               <div key={label} className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm transition ${i <= stage ? 'bg-slate-100 text-slate-900' : 'text-slate-400'}`}>
                 {i < stage ? <CheckCircle2 size={17} className="text-emerald-400" /> :

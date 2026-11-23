@@ -72,6 +72,16 @@ def _startup():
     if not REGISTRY_DB_PATH.exists():
         registry.seed()
     registry.init()
+    # Load the OCR engine and the tamper model now, not on the first upload. On a fresh
+    # deploy (no ocr_cache yet) the first scan otherwise pays both load times on top of
+    # the OCR itself, which is what pushes it past the host's request timeout.
+    try:
+        from .extraction import get_engine
+        from .flags import tamper_model
+        get_engine()
+        tamper_model()
+    except Exception as e:  # never block startup; the first scan will retry the load
+        print(f"[startup] model warm-up skipped: {e}")
 
 
 class Login(BaseModel):

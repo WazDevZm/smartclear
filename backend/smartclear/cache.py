@@ -46,6 +46,12 @@ def key_for(image: np.ndarray) -> str:
     h.update(np.ascontiguousarray(image).tobytes())
     h.update(str(image.shape).encode())
     h.update(_model_stamp().encode())
+    # Keep each recognizer's results apart. The stock reader adds nothing, so existing entries stay valid.
+    from .config import ocr_reader
+
+    reader = ocr_reader()
+    if reader != "stock":
+        h.update(f"reader={reader}".encode())
     return h.hexdigest()
 
 

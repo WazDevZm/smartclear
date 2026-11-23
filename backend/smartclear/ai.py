@@ -17,7 +17,7 @@ import time
 import urllib.error
 import urllib.request
 
-from .config import AI_TIMEOUT_S, OPENROUTER_API_KEY, OPENROUTER_MODELS
+from .config import AI_BUDGET_S, AI_TIMEOUT_S, OPENROUTER_API_KEY, OPENROUTER_MODELS
 from .verify import norm_nrc, parse_date
 
 ACTIONS = {
@@ -287,7 +287,12 @@ def call_llm(facts: dict, baseline: dict) -> tuple[dict | None, dict]:
     user = ("Case summary (anonymised):\n" + json.dumps(facts, indent=1) +
             "\n\nThe rule-based checker suggests: " + baseline["suggested_action"] +
             ". You may disagree if the summary supports it.")
+    deadline = time.perf_counter() + AI_BUDGET_S
     for model in OPENROUTER_MODELS:
+        remaining = deadline - time.perf_counter()
+        if remaining < 4:      # not enough time left for a useful answer: let the rules answer
+            meta["attempts"].append({"model": model, "error": "skipped: time budget used up"})
+            continue
         t0 = time.perf_counter()
         body = {"model": model, "temperature": 0.2, "max_tokens": 3000, "reasoning": {"effort": "low"},
                 "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]}
@@ -297,7 +302,7 @@ def call_llm(facts: dict, baseline: dict) -> tuple[dict | None, dict]:
                      "HTTP-Referer": "https://github.com/WazDevZm/smartclear", "X-Title": "SmartClear"})
         attempt = {"model": model}
         try:
-            with urllib.request.urlopen(req, timeout=AI_TIMEOUT_S) as r:
+            with urllib.request.urlopen(req, timeout=min(AI_TIMEOUT_S, remaining)) as r:
                 data = json.loads(r.read())
             content = (data.get("choices") or [{}])[0].get("message", {}).get("content")
             parsed = _parse_json(content)

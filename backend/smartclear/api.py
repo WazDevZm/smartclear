@@ -18,7 +18,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import ai, db, moha_client, registry
+from . import ai, db, jobs, moha_client, registry
 from .config import FRONTEND_DIST, MODELS_DIR, MOHA_API_URL, OPENROUTER_API_KEY, REGISTRY_DB_PATH, STORAGE_DIR
 from .document import prepare_document_pages
 from .pipeline import encode_png, process_pages
@@ -72,6 +72,16 @@ def _startup():
     if not REGISTRY_DB_PATH.exists():
         registry.seed()
     registry.init()
+    # Load the OCR engine and the tamper model now, not on the first upload. On a fresh
+    # deploy (no ocr_cache yet) the first scan otherwise pays both load times on top of
+    # the OCR itself, which is what pushes it past the host's request timeout.
+    try:
+        from .extraction import get_engine
+        from .flags import tamper_model
+        get_engine()
+        tamper_model()
+    except Exception as e:  # never block startup; the first scan will retry the load
+        print(f"[startup] model warm-up skipped: {e}")
 
 
 class Login(BaseModel):
@@ -284,13 +294,49 @@ def _create_case_tx(data: bytes, filename: str, tpin: str | None, actor: str) ->
         return create_case(c, data, filename, tpin, actor)
 
 
-@app.post("/api/cases")
-async def upload(file: UploadFile = File(...), tpin: str | None = Form(None), user=Depends(current_user)):
-    data = await file.read()
-    if len(data) > 15 * 1024 * 1024:
-        raise HTTPException(413, "File too large (max 15 MB)")
+MAX_UPLOAD = 15 * 1024 * 1024
+
+
+def _process_item(data: bytes, filename: str, tpin: str | None, actor: str) -> dict:
+    """Run one document through the pipeline; returns a per-document summary (never raises)."""
+    item = {"filename": filename}
+    if len(data) > MAX_UPLOAD:
+        item["error"] = "File too large (max 15 MB)"
+        return item
+    if not data:
+        item["error"] = "Empty file"
+        return item
     try:
-        cid = await run_in_threadpool(_create_case_tx, data, file.filename or "upload", tpin or None, user["username"])
+        cid = _create_case_tx(data, filename, tpin, actor)
+    except Exception as e:
+        item["error"] = f"Could not process document: {e}"
+        return item
+    with db.conn() as c:
+        r = c.execute("SELECT ref, risk_band, verification, n_flags, full_name, nrc_number FROM cases WHERE id=?",
+                      (cid,)).fetchone()
+    item.update({"id": cid, "ref": r["ref"], "risk_band": r["risk_band"], "verification": r["verification"],
+                 "n_flags": r["n_flags"], "full_name": r["full_name"], "nrc_number": r["nrc_number"]})
+    return item
+
+
+@app.post("/api/cases")
+async def upload(file: UploadFile = File(...), tpin: str | None = Form(None), background: bool = Form(False),
+                 user=Depends(current_user)):
+    """Verify one scan. ``background=true`` (used by the web app) queues it and returns a job to poll, so a slow
+    OCR pass can never hit the hosting proxy's request timeout (502/504)."""
+    data = await file.read()
+    if len(data) > MAX_UPLOAD:
+        raise HTTPException(413, "File too large (max 15 MB)")
+    name = file.filename or "upload"
+    if background:
+        def work(progress):
+            item = _process_item(data, name, tpin or None, user["username"])
+            if item.get("error"):
+                raise RuntimeError(item["error"].removeprefix("Could not process document: "))
+            progress(item)
+        return JSONResponse(jobs.submit("case", user["username"], 1, work), status_code=202)
+    try:
+        cid = await run_in_threadpool(_create_case_tx, data, name, tpin or None, user["username"])
     except HTTPException:
         raise
     except Exception as e:
@@ -299,32 +345,28 @@ async def upload(file: UploadFile = File(...), tpin: str | None = Form(None), us
 
 
 @app.post("/api/batches")
-async def batch_upload(files: list[UploadFile] = File(...), tpin: str | None = Form(None), user=Depends(current_user)):
-    """Verify many scans in one submission and get a per-document outcome summary."""
+async def batch_upload(files: list[UploadFile] = File(...), tpin: str | None = Form(None),
+                       background: bool = Form(False), user=Depends(current_user)):
+    """Verify many scans in one submission. ``background=true`` returns a job with live per-document progress."""
     if len(files) > 50:
         raise HTTPException(400, "Batch is limited to 50 documents")
-    results = []
-    for f in files:
-        item = {"filename": f.filename or "unnamed"}
-        try:
-            data = await f.read()
-            if len(data) > 15 * 1024 * 1024:
-                item["error"] = "File too large (max 15 MB)"
-            elif not data:
-                item["error"] = "Empty file"
-            else:
-                cid = await run_in_threadpool(_create_case_tx, data, item["filename"], tpin or None, user["username"])
-                with db.conn() as c:
-                    r = c.execute("SELECT ref, risk_band, verification, n_flags, full_name, nrc_number "
-                                  "FROM cases WHERE id=?", (cid,)).fetchone()
-                item.update({"id": cid, "ref": r["ref"], "risk_band": r["risk_band"],
-                             "verification": r["verification"], "n_flags": r["n_flags"],
-                             "full_name": r["full_name"], "nrc_number": r["nrc_number"]})
-        except Exception as e:
-            item["error"] = f"Could not process document: {e}"
-        results.append(item)
+    docs = [((f.filename or "unnamed"), await f.read()) for f in files]
+    if background:
+        def work(progress):
+            for name, data in docs:
+                progress(_process_item(data, name, tpin or None, user["username"]))
+        return JSONResponse(jobs.submit("batch", user["username"], len(docs), work), status_code=202)
+    results = [await run_in_threadpool(_process_item, data, name, tpin or None, user["username"]) for name, data in docs]
     done = [r for r in results if r.get("id")]
     return {"processed": len(done), "failed": len(results) - len(done), "results": results}
+
+
+@app.get("/api/jobs/{job_id}")
+def job_status(job_id: str, user=Depends(current_user)):
+    job = jobs.get(job_id, user["username"])
+    if not job:
+        raise HTTPException(404, "Job not found (it may have expired, or the server restarted)")
+    return job
 
 
 class Review(BaseModel):

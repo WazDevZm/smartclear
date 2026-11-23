@@ -42,6 +42,37 @@ Offline use: delete `storage/ocr_cache/` to force fresh OCR on repeat uploads (r
 
 Tests: `cd backend && ../.venv/bin/python -m pytest -q`
 
+### Choosing the text reader: stock or fine-tuned
+
+SmartClear can read card text with either of two recognizers. Text detection is the stock PP-OCR detector in both cases.
+
+| `SMARTCLEAR_OCR_READER` | Recognizer |
+|---|---|
+| `stock` (default) | RapidOCR's bundled PP-OCRv4 recognizer, unchanged |
+| `onnx` | PP-OCRv4 English recognizer fine-tuned on our generated synthetic NRC field crops (`models/ocr/`, training code on the `ocr-text-extraction` branch) |
+
+```bash
+SMARTCLEAR_OCR_READER=onnx ./run.sh                       # macOS / Linux
+$env:SMARTCLEAR_OCR_READER = "onnx"                       # Windows PowerShell, then start uvicorn as usual
+```
+
+Each reader keeps its own OCR cache entries, so switching never shows the other reader's results.
+To compare the two side by side: `.venv/bin/python backend/scripts/compare_readers.py` (writes `docs/metrics/reader_comparison.json`).
+
+**Measured result (22 Nov 2026, synthetic data only, real cards not measured):**
+
+| Test | Stock | Fine-tuned (onnx) |
+|---|---|---|
+| Facilitator cards (100 PDFs), key fields NRC / name / DOB | **99.0%** | 91.9% |
+| Facilitator cards, all 12 fields | **96.5%** | 89.5% |
+| Facilitator cards with all key fields right | **98 / 100** | 81 / 100 |
+| Held-out generated field crops (277), ignoring spaces | 72.2% | **96.8%** |
+
+The fine-tuned reader is much better on crops from the generated card set it was trained on, but worse on the facilitators'
+cards, which have a different look and which the app's field positions were tuned on (biggest drops: full name 98% → 81%,
+special marks 99% → 65%). **The stock reader stays the default.** Retraining with the facilitators' card style included is
+the next step before reconsidering. Timings from this run are not comparable: the onnx pass ran while other jobs shared the CPU.
+
 ## Results on the synthetic set (100 NRCs, 33 labelled fraudulent)
 
 | Brief success measure | Result | How it is measured |
@@ -89,6 +120,17 @@ So: on real scans, expect exact reads on the bold printed fields (card no., regi
   * 70–85%: the OCR value is kept and the district is shown as a **suggestion** for the officer.
   * The thresholds are `DISTRICT_AUTO_CORRECT` and `DISTRICT_SUGGEST` in `config.py`. Personal names, villages and chiefs are never auto-corrected.
 * The perforated (dot-matrix) registration number found on genuine old-issue NRCs is **not** machine-readable with this OCR stack; the system reports the number as unreadable rather than guessing. An officer must transcribe it.
+
+### Uploads run as background jobs (no 502s behind hosting proxies)
+* The web app sends `background=true`: `POST /api/cases` and `POST /api/batches` return `202` with a job at once,
+  and the page polls `GET /api/jobs/{id}` (batch jobs report per-document progress). A slow OCR pass can no longer
+  outlast a proxy's request timeout, which hosts report as **502/504**. Without the flag the endpoints still answer
+  synchronously, for scripts.
+* One OCR worker by default (`SMARTCLEAR_OCR_WORKERS`) keeps memory flat on small instances. The OCR engine and
+  tamper model load at startup, so the first scan after a deploy doesn't pay the load time.
+* The AI assistant has a total time budget (`AI_BUDGET_S`, default 25 s, `AI_TIMEOUT_S` per model). After that the
+  rule-based explainer answers. Default model order (free models, benchmarked on a real case 23 Nov 2026):
+  `particle-1` (~5 s), `nemotron-3-nano-omni` (~10 s), `dots-3-note` (~14 s), `nemotron-3-ultra`, `nemotron-3.5-super-vl`.
 
 ### Performance: `backend/smartclear/pipeline.py`, `cards.py`, `cache.py`
 * The two card sides on one page are processed **in parallel** (multi-card pages detect, crop, OCR and extract each card concurrently, then merge).

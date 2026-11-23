@@ -19,7 +19,9 @@ def _load_env(path: Path) -> None:
 _load_env(ROOT / ".env")
 DATA_DIR = ROOT / "data"
 MODELS_DIR = ROOT / "models"
-STORAGE_DIR = ROOT / "storage"          # uploaded docs, rendered images, crops
+# uploaded docs, rendered images, crops, DB. SMARTCLEAR_STORAGE_DIR (relative to the project root)
+# lets two copies of the app run side by side, e.g. one per text reader, without sharing cases.
+STORAGE_DIR = ROOT / os.environ.get("SMARTCLEAR_STORAGE_DIR", "storage")
 DB_PATH = STORAGE_DIR / "smartclear.db"
 REGISTRY_DB_PATH = STORAGE_DIR / "moha_registry.db"   # sandbox Ministry of Home Affairs register (separate system)
 FRONTEND_DIST = ROOT / "frontend" / "dist"
@@ -36,6 +38,22 @@ DISTRICT_AUTO_CORRECT = 85     # at or above: replace with the canonical distric
 DISTRICT_SUGGEST = 70          # at or above (but below auto): keep OCR value, offer the district to the officer
 
 TAMPER_MODEL_PATH = MODELS_DIR / "tamper_model.joblib"
+
+# Text recognizer used for reading fields. Detection always uses the stock PP-OCR detector.
+#   stock: RapidOCR's bundled PP-OCRv4 recognizer (default, unchanged behaviour)
+#   onnx:  PP-OCRv4 English recognizer fine-tuned on synthetic NRC field crops (models/ocr/)
+# Choose with the SMARTCLEAR_OCR_READER environment variable.
+OCR_READERS = ("stock", "onnx")
+OCR_REC_MODEL_PATH = MODELS_DIR / "ocr" / "nrc_rec.onnx"
+OCR_REC_KEYS_PATH = MODELS_DIR / "ocr" / "nrc_rec_keys.txt"
+
+
+def ocr_reader() -> str:
+    """The text recognizer selected by SMARTCLEAR_OCR_READER ('stock' when unset)."""
+    reader = os.environ.get("SMARTCLEAR_OCR_READER", "stock").strip().lower() or "stock"
+    if reader not in OCR_READERS:
+        raise ValueError(f"SMARTCLEAR_OCR_READER must be one of {OCR_READERS}, got {reader!r}")
+    return reader
 REFERENCE_PATH = MODELS_DIR / "reference.json"   # district-code table learned from genuine specimens
 
 # Verification thresholds
@@ -60,9 +78,13 @@ REGISTRY_BACKEND = os.environ.get("REGISTRY_BACKEND", "sqlite").lower()
 
 # AI explanation layer (OpenRouter, OpenAI-compatible). Without a key, a deterministic rule-based explainer is used.
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+# Free models, fastest reliable first (benchmarked 2026-11-23 on a real case; see docs). Rate-limited ones fail fast.
 OPENROUTER_MODELS = [m.strip() for m in os.environ.get(
-    "OPENROUTER_MODEL", "nvidia/nemotron-3.5-super-vl:free,nvidia/nemotron-3.5-lightning:free,google/gemma-4-31b-it:free").split(",") if m.strip()]
-AI_TIMEOUT_S = float(os.environ.get("AI_TIMEOUT_S", "60"))
+    "OPENROUTER_MODEL", "particle-ai/particle-1:free,nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,dots-studio/dots-3-note-preview:free,nvidia/nemotron-3-ultra-550b-a55b:free,nvidia/nemotron-3.5-super-vl:free").split(",") if m.strip()]
+AI_TIMEOUT_S = float(os.environ.get("AI_TIMEOUT_S", "20"))      # per model attempt
+# Total time across all model attempts before the rule-based explainer answers instead. Keeps the request well
+# under hosting proxies' timeouts (which otherwise surface as 502/504).
+AI_BUDGET_S = float(os.environ.get("AI_BUDGET_S", "25"))
 
 for d in (STORAGE_DIR, MODELS_DIR, DATA_DIR):
     d.mkdir(parents=True, exist_ok=True)

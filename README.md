@@ -141,6 +141,9 @@ Benign augmentations (JPEG, noise, brightness, defocus) are applied to both genu
   created with a "verify manually" warning.
 * `run.sh` sets `MOHA_API_URL`, so the server calls the registry over HTTP like an external service. Without it
   (scripts, tests, Docker) the call is made in-process through the same contract.
+* **Supabase NRC bank (optional):** set `SUPABASE_URL`, `SUPABASE_SECRET_KEY` and `REGISTRY_BACKEND=supabase` to
+  read citizens from the `mohais_citizens` table instead of the local SQLite copy. Load it once with
+  `scripts/seed_supabase_registry.py` (upserts by NRC number, safe to re-run). Default is `sqlite`.
 * Seeded from the facilitators' ground truth. For altered cards the register keeps the original identity.
   `scripts/evaluate_registry.py` measures it (the **Model performance** page shows the result);
   `scripts/registry_backfill.py` upgrades an existing database.

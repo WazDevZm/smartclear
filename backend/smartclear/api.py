@@ -96,6 +96,7 @@ def health():
 
     return {"status": "ok", "tamper_model_loaded": tamper_model() is not None,
             "registry_transport": "http" if MOHA_API_URL else "in-process",
+            "registry_backend": registry.backend(),
             "ai_engine": "openrouter" if OPENROUTER_API_KEY else "rules-only"}
 
 
@@ -398,7 +399,7 @@ def registry_status(user=Depends(current_user)):
     with registry.conn() as c:
         by_status = {r[0]: r[1] for r in c.execute("SELECT status, COUNT(*) FROM citizens GROUP BY status")}
         requests = {r[0]: r[1] for r in c.execute("SELECT outcome, COUNT(*) FROM requests GROUP BY outcome")}
-    return {"source": "Ministry of Home Affairs — National Registration (sandbox)",
+    return {"source": "Ministry of Home Affairs — National Registration (sandbox)", "backend": registry.backend(),
             "transport": "http" if MOHA_API_URL else "in-process", "endpoint": MOHA_API_URL or "/moha/api/v1",
             "citizens": sum(by_status.values()), "by_status": by_status, "requests": requests}
 

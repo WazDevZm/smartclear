@@ -17,7 +17,7 @@ import time
 import urllib.error
 import urllib.request
 
-from .config import AI_BUDGET_S, AI_TIMEOUT_S, OPENROUTER_API_KEY, OPENROUTER_MODELS
+from .config import AI_BUDGET_S, AI_TIMEOUT_S, GEMINI_API_KEY, GEMINI_MODELS
 from .verify import norm_nrc, parse_date
 
 ACTIONS = {
@@ -281,25 +281,24 @@ def _valid(d: dict | None) -> bool:
 def call_llm(facts: dict, baseline: dict) -> tuple[dict | None, dict]:
     """Returns (parsed answer or None, call metadata). Tries each configured model in turn."""
     meta = {"attempts": []}
-    if not OPENROUTER_API_KEY:
-        meta["error"] = "no OPENROUTER_API_KEY configured"
+    if not GEMINI_API_KEY:
+        meta["error"] = "no GEMINI_API_KEY configured"
         return None, meta
     user = ("Case summary (anonymised):\n" + json.dumps(facts, indent=1) +
             "\n\nThe rule-based checker suggests: " + baseline["suggested_action"] +
             ". You may disagree if the summary supports it.")
     deadline = time.perf_counter() + AI_BUDGET_S
-    for model in OPENROUTER_MODELS:
+    for model in GEMINI_MODELS:
         remaining = deadline - time.perf_counter()
         if remaining < 4:      # not enough time left for a useful answer: let the rules answer
             meta["attempts"].append({"model": model, "error": "skipped: time budget used up"})
             continue
         t0 = time.perf_counter()
-        body = {"model": model, "temperature": 0.2, "max_tokens": 3000, "reasoning": {"effort": "low"},
+        body = {"model": model, "temperature": 0.2, "max_tokens": 3000, "reasoning_effort": "low",
                 "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}]}
         req = urllib.request.Request(
-            "https://openrouter.ai/api/v1/chat/completions", data=json.dumps(body).encode(), method="POST",
-            headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json",
-                     "HTTP-Referer": "https://github.com/WazDevZm/smartclear", "X-Title": "SmartClear"})
+            "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", data=json.dumps(body).encode(), method="POST",
+            headers={"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"})
         attempt = {"model": model}
         try:
             with urllib.request.urlopen(req, timeout=min(AI_TIMEOUT_S, remaining)) as r:

@@ -197,7 +197,7 @@ Benign augmentations (JPEG, noise, brightness, defocus) are applied to both genu
   the officer followed it.
 * **Privacy:** the model receives an anonymised summary (what differs and by how much, flag types, tamper reasons).
   Names, NRC numbers and dates of birth are never sent.
-* Uses OpenRouter (`OPENROUTER_API_KEY` and a comma-separated `OPENROUTER_MODEL` fallback list in `.env`). Without
+* Uses Google Gemini (`GEMINI_API_KEY` and a comma-separated `GEMINI_MODEL` fallback list in `.env`). Without
   a key, or if every model fails, a rule-based explainer returns the same structure. API:
   `POST /api/cases/{id}/explain` (`?refresh=true` to regenerate).
 

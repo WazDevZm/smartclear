@@ -46,5 +46,5 @@ fi
 export MOHA_API_URL=${MOHA_API_URL:-http://127.0.0.1:8000/moha/api/v1}
 
 echo "▸ SmartClear running at http://localhost:8000  (login: officer / futureminds)"
-[ -f .env ] && grep -q "^OPENROUTER_API_KEY=." .env && echo "▸ AI assistant: OpenRouter" || echo "▸ AI assistant: built-in rules (set OPENROUTER_API_KEY in .env for AI explanations)"
+[ -f .env ] && grep -q "^GEMINI_API_KEY=." .env && echo "▸ AI assistant: Gemini" || echo "▸ AI assistant: built-in rules (set GEMINI_API_KEY in .env for AI explanations)"
 cd backend && exec ../.venv/bin/uvicorn smartclear.api:app --host 127.0.0.1 --port 8000

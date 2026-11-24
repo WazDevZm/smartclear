@@ -57,3 +57,36 @@ def test_falls_back_to_rules_without_llm():
 def test_parses_fenced_llm_json():
     assert ai._parse_json('```json\n{"a": 1}\n```') == {"a": 1}
     assert ai._parse_json('Sure! {"a": 2} hope that helps') == {"a": 2}
+
+
+def test_gemini_call_parses_response_and_sends_no_personal_data(monkeypatch):
+    sent = []
+    answer = {"headline": "Form has a typo", "explanation": "The card matches the register.", "reasons": [],
+              "suggested_action": "request_info", "next_steps": ["Ask the taxpayer."],
+              "questions_for_taxpayer": [], "confidence": "medium"}
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):  # Gemini's OpenAI-compatible shape, with the JSON fenced as models often do
+            return json.dumps({"model": "gemini-test", "choices": [
+                {"message": {"content": "```json\n" + json.dumps(answer) + "\n```"}}]}).encode()
+
+    def fake_urlopen(req, timeout):
+        sent.append(req)
+        return Resp()
+    monkeypatch.setattr(ai, "GEMINI_API_KEY", "test-key")
+    monkeypatch.setattr(ai, "GEMINI_MODELS", ["gemini-test"])
+    monkeypatch.setattr(ai.urllib.request, "urlopen", fake_urlopen)
+    out = ai.explain(make_case(form_dob="2007-04-08", flags=["RECORD_MISMATCH"]))
+    assert out["source"] == "ai" and out["model"] == "gemini-test" and out["suggested_action"] == "request_info"
+    req = sent[0]
+    assert req.full_url.startswith("https://generativelanguage.googleapis.com/")
+    assert req.get_header("Authorization") == "Bearer test-key"
+    body = req.data.decode()
+    for secret in ("PRECIOUS", "MWEEMBA", "CHISENGA", "783849", "2006-04-08", "2007-04-08", "08.04.06"):
+        assert secret not in body

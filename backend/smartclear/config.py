@@ -76,11 +76,11 @@ SUPABASE_SECRET_KEY = os.environ.get("SUPABASE_SECRET_KEY", "")
 SUPABASE_TIMEOUT_S = float(os.environ.get("SUPABASE_TIMEOUT_S", "8"))
 REGISTRY_BACKEND = os.environ.get("REGISTRY_BACKEND", "sqlite").lower()
 
-# AI explanation layer (OpenRouter, OpenAI-compatible). Without a key, a deterministic rule-based explainer is used.
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-# Free models, fastest reliable first (benchmarked 2026-11-23 on a real case; see docs). Rate-limited ones fail fast.
-OPENROUTER_MODELS = [m.strip() for m in os.environ.get(
-    "OPENROUTER_MODEL", "particle-ai/particle-1:free,nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free,dots-studio/dots-3-note-preview:free,nvidia/nemotron-3-ultra-550b-a55b:free,nvidia/nemotron-3.5-super-vl:free").split(",") if m.strip()]
+# AI explanation layer (Google Gemini via its OpenAI-compatible endpoint). Without a key, a deterministic rule-based explainer is used.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# Fallback order; overloaded models (HTTP 503) fail fast and the next one is tried.
+GEMINI_MODELS = [m.strip() for m in os.environ.get(
+    "GEMINI_MODEL", "gemini-3.5-flash,gemini-3.5-flash-lite,gemini-flash-lite-latest").split(",") if m.strip()]
 AI_TIMEOUT_S = float(os.environ.get("AI_TIMEOUT_S", "20"))      # per model attempt
 # Total time across all model attempts before the rule-based explainer answers instead. Keeps the request well
 # under hosting proxies' timeouts (which otherwise surface as 502/504).

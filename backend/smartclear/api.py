@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import ai, db, jobs, moha_client, registry
-from .config import FRONTEND_DIST, MODELS_DIR, MOHA_API_URL, OPENROUTER_API_KEY, REGISTRY_DB_PATH, STORAGE_DIR
+from .config import FRONTEND_DIST, MODELS_DIR, MOHA_API_URL, GEMINI_API_KEY, REGISTRY_DB_PATH, STORAGE_DIR
 from .document import prepare_document_pages
 from .pipeline import encode_png, process_pages
 from .verify import fmt_nrc
@@ -107,7 +107,7 @@ def health():
     return {"status": "ok", "tamper_model_loaded": tamper_model() is not None,
             "registry_transport": "http" if MOHA_API_URL else "in-process",
             "registry_backend": registry.backend(),
-            "ai_engine": "openrouter" if OPENROUTER_API_KEY else "rules-only"}
+            "ai_engine": "gemini" if GEMINI_API_KEY else "rules-only"}
 
 
 @app.get("/api/public/metrics")

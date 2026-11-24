@@ -97,11 +97,12 @@ export function AiAssistant({ caseId, initial, onLoaded }) {
               <UserCheck size={15} className="mt-0.5 shrink-0 text-zra-navy" />
               <span>This is a suggestion. You make and record the final decision below.</span>
             </div>
-            <div className="mt-3 text-[11px] leading-relaxed text-slate-400">
-              {ai.source === 'ai' ? <>Written by AI ({ai.model}) · confidence {ai.confidence}</> : <>Written by SmartClear’s built-in rules (AI service unavailable)</>}
-              {ai.source === 'ai' && !ai.agrees_with_rules && <> · the built-in rules would suggest “{actionMeta[ai.rule_based_action]?.label}”</>}
-              <br />{ai.data_shared}
-            </div>
+            {ai.source === 'ai' && (
+              <div className="mt-3 text-[11px] leading-relaxed text-slate-400">
+                Written by AI ({ai.model}) · confidence {ai.confidence}
+                {!ai.agrees_with_rules && <> · the built-in rules would suggest “{actionMeta[ai.rule_based_action]?.label}”</>}
+              </div>
+            )}
           </div>
         </div>
       )}

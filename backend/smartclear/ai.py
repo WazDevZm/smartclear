@@ -343,6 +343,5 @@ def explain(case: dict, use_llm: bool = True) -> dict:
         "attempts": meta.get("attempts", []),
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "human_in_the_loop": "Suggestion only. The officer makes and records the decision.",
-        "data_shared": "Anonymised summary only: no names, NRC numbers or dates of birth were sent.",
     })
     return out
